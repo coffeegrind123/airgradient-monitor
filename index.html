@@ -100,6 +100,21 @@
           </select>
         </div>
       </div>
+      <button class="button-secondary" id="outdoorTimeBtn" onclick="toggleMenu('outdoorTimeMenu')">
+        <span class="btn-content">
+          <span class="text-ellipsis" id="outdoorTimeLabel">Last 7 days</span>
+          <span class="arrow-down"></span>
+        </span>
+      </button>
+      <div class="time-range-menu" id="outdoorTimeMenu">
+        <div class="menu-item active" data-hours="8" data-section="outdoor">Last 8 hours</div>
+        <div class="menu-item" data-hours="24" data-section="outdoor">Last 24 hours</div>
+        <div class="menu-item" data-hours="48" data-section="outdoor">Last 48 hours</div>
+        <div class="menu-item" data-hours="168" data-section="outdoor">Last 7 days</div>
+        <div class="menu-item" data-hours="720" data-section="outdoor">Last 30 days</div>
+        <div class="menu-item" data-hours="2160" data-section="outdoor">Last 90 days</div>
+        <div class="menu-item" data-hours="0" data-section="outdoor">All</div>
+      </div>
       <span style="margin-left:auto; font-size:11px; opacity:0.4;">Powered by IQAir</span>
     </div>
     <div class="measures-list" id="outdoorMeasures">
@@ -118,6 +133,21 @@
           <span class="text-ellipsis" id="weatherSummary">Weather</span>
         </span>
       </button>
+      <button class="button-secondary" id="weatherTimeBtn" onclick="toggleMenu('weatherTimeMenu')">
+        <span class="btn-content">
+          <span class="text-ellipsis" id="weatherTimeLabel">Last 7 days</span>
+          <span class="arrow-down"></span>
+        </span>
+      </button>
+      <div class="time-range-menu" id="weatherTimeMenu">
+        <div class="menu-item active" data-hours="8" data-section="weather">Last 8 hours</div>
+        <div class="menu-item" data-hours="24" data-section="weather">Last 24 hours</div>
+        <div class="menu-item" data-hours="48" data-section="weather">Last 48 hours</div>
+        <div class="menu-item" data-hours="168" data-section="weather">Last 7 days</div>
+        <div class="menu-item" data-hours="720" data-section="weather">Last 30 days</div>
+        <div class="menu-item" data-hours="2160" data-section="weather">Last 90 days</div>
+        <div class="menu-item" data-hours="0" data-section="weather">All</div>
+      </div>
       <span style="margin-left:auto; font-size:11px; opacity:0.4;">Powered by PirateWeather</span>
     </div>
     <div class="measures-list" id="weatherMeasures"></div>
@@ -571,6 +601,11 @@
       if (outMenu && outBtn && !outMenu.contains(e.target) && !outBtn.contains(e.target)) {
         outMenu.classList.remove('open');
       }
+      ['outdoorTimeMenu','weatherTimeMenu'].forEach(id => {
+        const m = document.getElementById(id);
+        const b = document.getElementById(id.replace('Menu','Btn'));
+        if (m && b && !m.contains(e.target) && !b.contains(e.target)) m.classList.remove('open');
+      });
     });
 
     document.querySelectorAll('.time-range-menu .menu-item').forEach(item => {
@@ -582,6 +617,30 @@
         selectedHours = parseInt(item.dataset.hours);
         if (isNaN(selectedHours)) selectedHours = 8;
         loadHistory();
+      });
+    });
+
+    document.querySelectorAll('#outdoorTimeMenu .menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('#outdoorTimeMenu .menu-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        document.getElementById('outdoorTimeLabel').textContent = item.textContent;
+        document.getElementById('outdoorTimeMenu').classList.remove('open');
+        selectedOutdoorHours = parseInt(item.dataset.hours);
+        if (isNaN(selectedOutdoorHours)) selectedOutdoorHours = 168;
+        loadOutdoorHistory();
+      });
+    });
+
+    document.querySelectorAll('#weatherTimeMenu .menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('#weatherTimeMenu .menu-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        document.getElementById('weatherTimeLabel').textContent = item.textContent;
+        document.getElementById('weatherTimeMenu').classList.remove('open');
+        selectedWeatherHours = parseInt(item.dataset.hours);
+        if (isNaN(selectedWeatherHours)) selectedWeatherHours = 168;
+        loadWeatherHistory();
       });
     });
 
@@ -654,6 +713,12 @@
     }
 
     let outdoorInterval = null;
+    let selectedOutdoorHours = 168;
+    let selectedWeatherHours = 168;
+
+    function toggleMenu(menuId) {
+      document.getElementById(menuId).classList.toggle('open');
+    }
     const OUTDOOR_POLL_MS = 300000;
 
     function enableOutdoor() {
@@ -923,7 +988,7 @@
     async function loadOutdoorHistory() {
       if (!outdoorCity || !outdoorCountry) return;
       try {
-        const resp = await fetch(`${LOCAL_API}/outdoor/history?city=${encodeURIComponent(outdoorCity)}&country=${encodeURIComponent(outdoorCountry)}&hours=168`);
+        const resp = await fetch(`${LOCAL_API}/outdoor/history?city=${encodeURIComponent(outdoorCity)}&country=${encodeURIComponent(outdoorCountry)}&hours=${selectedOutdoorHours}`);
         const rows = await resp.json();
         if (Array.isArray(rows)) {
           outdoorHistory = rows;
@@ -1087,7 +1152,7 @@
 
     async function loadWeatherHistory() {
       try {
-        const resp = await fetch(`${LOCAL_API}/weather/history?hours=168`);
+        const resp = await fetch(`${LOCAL_API}/weather/history?hours=${selectedWeatherHours}`);
         const rows = await resp.json();
         if (Array.isArray(rows) && rows.length) {
           weatherHistory = rows;
