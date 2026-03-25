@@ -281,6 +281,79 @@ body {
   background-color: var(--menu-hover-bg);
 }
 
+.outdoor-panel {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.outdoor-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--spacing-sm);
+}
+
+.outdoor-panel-title {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--card-label-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.outdoor-panel-location {
+  font-size: var(--font-size-small);
+  color: var(--card-label-color);
+}
+
+.outdoor-metrics {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.outdoor-card {
+  background: var(--card-bg);
+  border-radius: var(--card-radius);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  min-width: 100px;
+}
+
+.outdoor-card .value {
+  font-size: var(--card-value-size);
+  font-weight: var(--font-weight-large);
+  color: var(--widget-text);
+}
+
+.outdoor-card .label {
+  font-size: var(--font-size-xs, 11px);
+  color: var(--card-label-color);
+}
+
+.outdoor-enable-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--btn-radius);
+  padding: 6px 14px;
+  font-size: var(--font-size-small);
+  font-family: var(--font-primary);
+  cursor: pointer;
+  transition: var(--transition-default);
+}
+
+.outdoor-enable-btn:hover {
+  background: var(--btn-hover-bg);
+}
+
+.outdoor-hidden {
+  display: none;
+}
+
 @media (max-width: 768px) {
   .measures-list {
     gap: 0px;
