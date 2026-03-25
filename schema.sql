@@ -31,3 +31,24 @@ CREATE TABLE IF NOT EXISTS measures (
     INDEX idx_sensor (sensor_id),
     UNIQUE KEY uq_sensor_time (sensor_id, recorded_at_utc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS outdoor_measures (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(100),
+    country VARCHAR(100),
+    recorded_at_utc DATETIME NOT NULL,
+    aqi_us INT,
+    aqi_cn INT,
+    main_pollutant VARCHAR(10),
+    pm25_estimated FLOAT,
+    temp_c FLOAT,
+    humidity INT,
+    pressure INT,
+    wind_speed FLOAT,
+    wind_direction INT,
+    weather_icon VARCHAR(10),
+    INDEX idx_outdoor_utc (recorded_at_utc),
+    INDEX idx_outdoor_city (city, country),
+    UNIQUE KEY uq_outdoor_city_time (city, country, recorded_at_utc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
