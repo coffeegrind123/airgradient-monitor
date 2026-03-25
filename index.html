@@ -90,13 +90,13 @@
       </div>
       <div id="locationPicker" class="outdoor-hidden">
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-          <select id="pickCountry" class="button-secondary" style="padding:0 10px;" onchange="loadStates()">
+          <select id="pickCountry" onchange="loadStates()">
             <option value="">Country...</option>
           </select>
-          <select id="pickState" class="button-secondary" style="padding:0 10px;" onchange="loadCities()">
+          <select id="pickState" onchange="loadCities()">
             <option value="">State...</option>
           </select>
-          <select id="pickCity" class="button-secondary" style="padding:0 10px;" onchange="selectCity()">
+          <select id="pickCity" onchange="selectCity()">
             <option value="">City...</option>
           </select>
         </div>
@@ -780,7 +780,7 @@
       } catch (e) { console.error('Outdoor city failed:', e); }
     }
 
-    function initOutdoor() {
+    async function initOutdoor() {
       const mode = localStorage.getItem('outdoor_mode');
       if (mode === 'gps') {
         const lat = localStorage.getItem('outdoor_lat');
@@ -790,7 +790,12 @@
         const city = localStorage.getItem('outdoor_city');
         const state = localStorage.getItem('outdoor_state');
         const country = localStorage.getItem('outdoor_country');
-        if (city) { fetchOutdoorCity(city, state, country); startOutdoorPoll(); }
+        if (city) {
+          fetchOutdoorCity(city, state, country);
+          startOutdoorPoll();
+          document.getElementById('locationPicker').classList.remove('outdoor-hidden');
+          await loadCountries();
+        }
       }
     }
 
