@@ -17,20 +17,23 @@
     <div style="height: 4px; margin-top: 21px; margin-bottom: 5px;"></div>
 
     <div class="header-row">
-      <button class="button-secondary" id="monitorBtn" onclick="toggleMonitorMenu()">
-        <span class="btn-content">
-          <span class="text-ellipsis" id="locationName">Room</span>
-          <span class="arrow-down"></span>
-        </span>
-      </button>
-      <div class="time-range-menu" id="monitorMenu" style="left: 0;"></div>
-      <button class="button-secondary" id="timeRangeBtn" onclick="toggleTimeMenu()">
-        <span class="btn-content">
-          <span class="text-ellipsis" id="timeRangeLabel">Last 8 hours (5 min)</span>
-          <span class="arrow-down"></span>
-        </span>
-      </button>
-      <div class="time-range-menu" id="timeRangeMenu">
+      <div class="dropdown-wrap">
+        <button class="button-secondary" id="monitorBtn" onclick="toggleMenu('monitorMenu')">
+          <span class="btn-content">
+            <span class="text-ellipsis" id="locationName">Room</span>
+            <span class="arrow-down"></span>
+          </span>
+        </button>
+        <div class="time-range-menu" id="monitorMenu"></div>
+      </div>
+      <div class="dropdown-wrap">
+        <button class="button-secondary" id="timeRangeBtn" onclick="toggleMenu('timeRangeMenu')">
+          <span class="btn-content">
+            <span class="text-ellipsis" id="timeRangeLabel">Last 8 hours (5 min)</span>
+            <span class="arrow-down"></span>
+          </span>
+        </button>
+        <div class="time-range-menu" id="timeRangeMenu">
         <div class="menu-item active" data-hours="8">Last 8 hours (5 min)</div>
         <div class="menu-item" data-hours="12">Last 12 hours (10 min)</div>
         <div class="menu-item" data-hours="24">Last 24 hours (15 min)</div>
@@ -42,6 +45,7 @@
         <div class="menu-item" data-hours="4320">Last 180 days (1 day)</div>
         <div class="menu-item" data-hours="8760">Last Year (1 day)</div>
         <div class="menu-item" data-hours="0">All</div>
+        </div>
       </div>
       <div class="download-button" title="Download current view as CSV" onclick="downloadCSV()">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
@@ -80,13 +84,14 @@
   <div class="air-quality-widget" id="outdoorWidget">
     <div style="height: 4px; margin-top: 10px; margin-bottom: 5px;"></div>
     <div class="header-row">
-      <button class="button-secondary" id="outdoorLocationBtn" onclick="toggleOutdoorLocationMenu()">
-        <span class="btn-content">
-          <span class="text-ellipsis" id="outdoorLocationName">Outdoor</span>
-          <span class="arrow-down"></span>
-        </span>
-      </button>
-      <div class="time-range-menu" id="outdoorLocationMenu" style="left:0; min-width:260px; padding:0;">
+      <div class="dropdown-wrap">
+        <button class="button-secondary" id="outdoorLocationBtn" onclick="toggleMenu('outdoorLocationMenu')">
+          <span class="btn-content">
+            <span class="text-ellipsis" id="outdoorLocationName">Outdoor</span>
+            <span class="arrow-down"></span>
+          </span>
+        </button>
+        <div class="time-range-menu" id="outdoorLocationMenu" style="min-width:260px; padding:0;">
         <div class="menu-item" onclick="enableOutdoor()">Use my location</div>
         <div style="border-top:1px solid rgba(128,128,128,0.2); padding:12px 16px; display:flex; flex-direction:column; gap:8px;">
           <select id="pickCountry" onchange="loadStates()" style="width:100%; height:36px; border-radius:4px; border:1px solid rgba(128,128,128,0.3); background:var(--widget-bg); color:var(--widget-text); font-family:var(--font-primary); font-size:13px; padding:0 8px;">
@@ -99,14 +104,16 @@
             <option value="">City...</option>
           </select>
         </div>
+        </div>
       </div>
-      <button class="button-secondary" id="outdoorTimeBtn" onclick="toggleMenu('outdoorTimeMenu')">
-        <span class="btn-content">
-          <span class="text-ellipsis" id="outdoorTimeLabel">Last 7 days</span>
-          <span class="arrow-down"></span>
-        </span>
-      </button>
-      <div class="time-range-menu" id="outdoorTimeMenu">
+      <div class="dropdown-wrap">
+        <button class="button-secondary" id="outdoorTimeBtn" onclick="toggleMenu('outdoorTimeMenu')">
+          <span class="btn-content">
+            <span class="text-ellipsis" id="outdoorTimeLabel">Last 7 days</span>
+            <span class="arrow-down"></span>
+          </span>
+        </button>
+        <div class="time-range-menu" id="outdoorTimeMenu">
         <div class="menu-item active" data-hours="8" data-section="outdoor">Last 8 hours</div>
         <div class="menu-item" data-hours="24" data-section="outdoor">Last 24 hours</div>
         <div class="menu-item" data-hours="48" data-section="outdoor">Last 48 hours</div>
@@ -114,6 +121,7 @@
         <div class="menu-item" data-hours="720" data-section="outdoor">Last 30 days</div>
         <div class="menu-item" data-hours="2160" data-section="outdoor">Last 90 days</div>
         <div class="menu-item" data-hours="0" data-section="outdoor">All</div>
+        </div>
       </div>
       <span style="margin-left:auto; font-size:11px; opacity:0.4;">Powered by IQAir</span>
     </div>
@@ -133,13 +141,14 @@
           <span class="text-ellipsis" id="weatherSummary">Weather</span>
         </span>
       </button>
-      <button class="button-secondary" id="weatherTimeBtn" onclick="toggleMenu('weatherTimeMenu')">
-        <span class="btn-content">
-          <span class="text-ellipsis" id="weatherTimeLabel">Last 7 days</span>
-          <span class="arrow-down"></span>
-        </span>
-      </button>
-      <div class="time-range-menu" id="weatherTimeMenu">
+      <div class="dropdown-wrap">
+        <button class="button-secondary" id="weatherTimeBtn" onclick="toggleMenu('weatherTimeMenu')">
+          <span class="btn-content">
+            <span class="text-ellipsis" id="weatherTimeLabel">Last 7 days</span>
+            <span class="arrow-down"></span>
+          </span>
+        </button>
+        <div class="time-range-menu" id="weatherTimeMenu">
         <div class="menu-item active" data-hours="8" data-section="weather">Last 8 hours</div>
         <div class="menu-item" data-hours="24" data-section="weather">Last 24 hours</div>
         <div class="menu-item" data-hours="48" data-section="weather">Last 48 hours</div>
@@ -147,6 +156,7 @@
         <div class="menu-item" data-hours="720" data-section="weather">Last 30 days</div>
         <div class="menu-item" data-hours="2160" data-section="weather">Last 90 days</div>
         <div class="menu-item" data-hours="0" data-section="weather">All</div>
+        </div>
       </div>
       <span style="margin-left:auto; font-size:11px; opacity:0.4;">Powered by PirateWeather</span>
     </div>
@@ -580,37 +590,16 @@
       }
     }
 
-    function toggleTimeMenu() {
-      const menu = document.getElementById('timeRangeMenu');
-      menu.classList.toggle('open');
-    }
-
     document.addEventListener('click', (e) => {
-      const timeMenu = document.getElementById('timeRangeMenu');
-      const timeBtn = document.getElementById('timeRangeBtn');
-      if (!timeMenu.contains(e.target) && !timeBtn.contains(e.target)) {
-        timeMenu.classList.remove('open');
-      }
-      const monMenu = document.getElementById('monitorMenu');
-      const monBtn = document.getElementById('monitorBtn');
-      if (!monMenu.contains(e.target) && !monBtn.contains(e.target)) {
-        monMenu.classList.remove('open');
-      }
-      const outMenu = document.getElementById('outdoorLocationMenu');
-      const outBtn = document.getElementById('outdoorLocationBtn');
-      if (outMenu && outBtn && !outMenu.contains(e.target) && !outBtn.contains(e.target)) {
-        outMenu.classList.remove('open');
-      }
-      ['outdoorTimeMenu','weatherTimeMenu'].forEach(id => {
-        const m = document.getElementById(id);
-        const b = document.getElementById(id.replace('Menu','Btn'));
-        if (m && b && !m.contains(e.target) && !b.contains(e.target)) m.classList.remove('open');
+      document.querySelectorAll('.dropdown-wrap').forEach(wrap => {
+        const menu = wrap.querySelector('.time-range-menu');
+        if (menu && !wrap.contains(e.target)) menu.classList.remove('open');
       });
     });
 
-    document.querySelectorAll('.time-range-menu .menu-item').forEach(item => {
+    document.querySelectorAll('#timeRangeMenu .menu-item').forEach(item => {
       item.addEventListener('click', () => {
-        document.querySelectorAll('.time-range-menu .menu-item').forEach(i => i.classList.remove('active'));
+        document.querySelectorAll('#timeRangeMenu .menu-item').forEach(i => i.classList.remove('active'));
         item.classList.add('active');
         document.getElementById('timeRangeLabel').textContent = item.textContent;
         document.getElementById('timeRangeMenu').classList.remove('open');
@@ -718,6 +707,12 @@
 
     function toggleMenu(menuId) {
       document.getElementById(menuId).classList.toggle('open');
+      if (menuId === 'outdoorLocationMenu') {
+        const menu = document.getElementById(menuId);
+        if (menu.classList.contains('open') && document.getElementById('pickCountry').options.length <= 1) {
+          loadCountries();
+        }
+      }
     }
     const OUTDOOR_POLL_MS = 300000;
 
