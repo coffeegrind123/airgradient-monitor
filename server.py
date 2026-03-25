@@ -9,26 +9,32 @@ import urllib.error
 import urllib.parse
 from datetime import datetime, timedelta
 
-AIRGRADIENT_HOST = os.environ.get('AIRGRADIENT_HOST', '192.168.1.100')
+AIRGRADIENT_HOSTS_STR = os.environ.get('AIRGRADIENT_HOSTS', os.environ.get('AIRGRADIENT_HOST', '192.168.1.100'))
+AIRGRADIENT_HOSTS = [h.strip() for h in AIRGRADIENT_HOSTS_STR.split(',') if h.strip()]
 PORT = int(os.environ.get('PORT', '8080'))
-SENSOR_ID = os.environ.get('SENSOR_ID', '')
 LOCATION_ID = int(os.environ.get('LOCATION_ID', '0'))
 
-def auto_detect_sensor():
-    global SENSOR_ID
-    if SENSOR_ID:
-        return
-    try:
-        url = f'http://{AIRGRADIENT_HOST}/measures/current'
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            data = json.loads(resp.read())
-            serial = data.get('serialno', '')
-            if serial:
-                SENSOR_ID = f'airgradient:{serial}'
-                print(f"Auto-detected sensor: {SENSOR_ID}")
-    except Exception as e:
-        print(f"Sensor auto-detect failed: {e}")
-        SENSOR_ID = 'unknown'
+sensor_registry = {}
+
+def detect_sensors():
+    for host in AIRGRADIENT_HOSTS:
+        try:
+            url = f'http://{host}/measures/current'
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                data = json.loads(resp.read())
+                serial = data.get('serialno', '')
+                model = data.get('model', '')
+                if serial:
+                    sid = f'airgradient:{serial}'
+                    sensor_registry[sid] = host
+                    print(f"Detected sensor {sid} (model {model}) at {host}", flush=True)
+        except Exception as e:
+            print(f"Failed to detect sensor at {host}: {e}", flush=True)
+
+def get_host_for_sensor(sensor_id):
+    return sensor_registry.get(sensor_id, AIRGRADIENT_HOSTS[0] if AIRGRADIENT_HOSTS else None)
+
+SENSOR_ID = ''
 
 DB_HOST = os.environ.get('DB_HOST', 'host.docker.internal')
 DB_PORT = int(os.environ.get('DB_PORT', '3306'))
@@ -59,7 +65,10 @@ def get_db():
         print(f"DB connection failed: {e}")
         return None
 
-def store_reading(data):
+def store_reading(data, sensor_id=None):
+    if not sensor_id:
+        serial = data.get('serialno', '')
+        sensor_id = f'airgradient:{serial}' if serial else 'unknown'
     conn = get_db()
     if not conn:
         return
@@ -97,7 +106,7 @@ def store_reading(data):
                 pm10 = VALUES(pm10),
                 aggregated_records = aggregated_records + 1
         """, (
-            LOCATION_ID, 'Room', 'Indoor', SENSOR_ID, True,
+            LOCATION_ID, 'Room', 'Indoor', sensor_id, True,
             bucket, bucket, 1,
             data.get('pm02'), data.get('pm02Compensated'), data.get('pm003Count'),
             data.get('rco2'), data.get('rco2'),
@@ -114,8 +123,8 @@ def store_reading(data):
         conn.close()
 
 def query_history(hours=8, sensor=None):
-    if sensor is None:
-        sensor = SENSOR_ID
+    if not sensor:
+        sensor = next(iter(sensor_registry), '')
     conn = get_db()
     if not conn:
         return None
@@ -149,16 +158,16 @@ def query_history(hours=8, sensor=None):
             conn.close()
         return None
 
-def collector_loop():
+def collector_loop(host, sensor_id):
     while True:
         try:
-            url = f'http://{AIRGRADIENT_HOST}/measures/current'
+            url = f'http://{host}/measures/current'
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
-                store_reading(data)
+                store_reading(data, sensor_id)
         except Exception as e:
-            print(f"Collector error: {e}")
+            print(f"Collector error ({host}): {e}")
         time.sleep(COLLECT_INTERVAL)
 
 
@@ -181,7 +190,17 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
 
     def _proxy_request(self):
         target_path = self.path[4:]
-        url = f'http://{AIRGRADIENT_HOST}{target_path}'
+        params = {}
+        if '?' in target_path:
+            path_part, qs = target_path.split('?', 1)
+            for pair in qs.split('&'):
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    params[k] = v
+            target_path = path_part
+        sensor = urllib.parse.unquote(params.get('sensor', ''))
+        host = get_host_for_sensor(sensor) if sensor else (AIRGRADIENT_HOSTS[0] if AIRGRADIENT_HOSTS else '127.0.0.1')
+        url = f'http://{host}{target_path}'
         try:
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=5) as resp:
@@ -323,7 +342,8 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-    auto_detect_sensor()
+    detect_sensors()
+    print(f"Registered {len(sensor_registry)} sensor(s): {dict(sensor_registry)}", flush=True)
 
     if db_available:
         import glob
@@ -340,11 +360,12 @@ if __name__ == '__main__':
                 except Exception as e:
                     print(f"  Failed: {csv_file}: {e}", flush=True)
 
-        t = threading.Thread(target=collector_loop, daemon=True)
-        t.start()
-        print(f"Collector started: polling every {COLLECT_INTERVAL}s", flush=True)
+        for sid, host in sensor_registry.items():
+            t = threading.Thread(target=collector_loop, args=(host, sid), daemon=True)
+            t.start()
+            print(f"Collector started for {sid} @ {host} (every {COLLECT_INTERVAL}s)", flush=True)
 
     server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
     print(f'Serving on http://localhost:{PORT}')
-    print(f'Proxying AirGradient API from http://{AIRGRADIENT_HOST}')
+    print(f'Polling {len(AIRGRADIENT_HOSTS)} host(s): {", ".join(AIRGRADIENT_HOSTS)}')
     server.serve_forever()

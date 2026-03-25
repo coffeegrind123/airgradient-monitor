@@ -23,14 +23,13 @@ services:
     ports:
       - "8085:8080"
     environment:
-      - AIRGRADIENT_HOST=${AIRGRADIENT_HOST:-192.168.1.100}
+      - AIRGRADIENT_HOSTS=${AIRGRADIENT_HOSTS:-${AIRGRADIENT_HOST:-192.168.1.100}}
       - PORT=8080
       - DB_HOST=mysql
       - DB_PORT=3306
       - DB_USER=root
       - DB_PASS=airgradient
       - DB_NAME=airgradient
-      - SENSOR_ID=${SENSOR_ID:-}
       - LOCATION_ID=${LOCATION_ID:-0}
       - COLLECT_INTERVAL=60
     volumes:

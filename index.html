@@ -469,7 +469,7 @@
 
     async function loadLiveFallback() {
       try {
-        const resp = await fetch(`${LOCAL_API}/measures/current`);
+        const resp = await fetch(`${LOCAL_API}/measures/current?sensor=${encodeURIComponent(selectedSensor)}`);
         if (!resp.ok) return;
         const raw = await resp.json();
         const data = enrichData(raw);
@@ -484,7 +484,7 @@
 
     async function fetchCurrentData() {
       try {
-        const response = await fetch(`${LOCAL_API}/measures/current`);
+        const response = await fetch(`${LOCAL_API}/measures/current?sensor=${encodeURIComponent(selectedSensor)}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const raw = await response.json();
         currentData = enrichData(raw);

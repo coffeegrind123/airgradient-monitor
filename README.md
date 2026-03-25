@@ -21,9 +21,18 @@ git clone https://github.com/coffeegrind123/airgradient-monitor.git
 cd airgradient-monitor
 ```
 
-Edit `docker-compose.yml` and set your sensor's IP:
-```yaml
-- AIRGRADIENT_HOST=192.168.x.x
+Copy `.env.example` to `.env` and set your sensor IP(s):
+```bash
+cp .env.example .env
+# Edit .env with your sensor IP(s)
+```
+
+```env
+# Single sensor
+AIRGRADIENT_HOSTS=192.168.1.100
+
+# Multiple sensors
+AIRGRADIENT_HOSTS=192.168.1.100,192.168.1.101
 ```
 
 ```bash
@@ -46,15 +55,13 @@ docker compose restart airgradient-dashboard
 
 Duplicate rows are safely skipped (keyed on sensor ID + timestamp).
 
-> **Note: Single sensor live polling.** The collector polls one device at a time (the `AIRGRADIENT_HOST` IP) and stores readings using the device's serial number as the sensor ID. If your CSV export contains data from multiple sensors, all of it will be imported and each sensor will appear in the monitor dropdown with full historical charts. However, only the device at `AIRGRADIENT_HOST` receives continuous live updates — data for other sensors in the database will remain static. Multi-device polling is not yet implemented.
-
 ## Configuration
 
 All configuration is via environment variables in `docker-compose.yml`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AIRGRADIENT_HOST` | `192.168.1.100` | Local IP of your AirGradient sensor |
+| `AIRGRADIENT_HOSTS` | `192.168.1.100` | Comma-separated IPs of your AirGradient sensors |
 | `PORT` | `8080` | Internal server port |
 | `DB_HOST` | `mysql` | MySQL hostname |
 | `DB_PORT` | `3306` | MySQL port |
@@ -62,7 +69,6 @@ All configuration is via environment variables in `docker-compose.yml`:
 | `DB_PASS` | `airgradient` | MySQL password |
 | `DB_NAME` | `airgradient` | MySQL database name |
 | `COLLECT_INTERVAL` | `60` | Seconds between sensor polls |
-| `SENSOR_ID` | *(auto-detected)* | Override sensor ID |
 | `LOCATION_ID` | `0` | Location ID for stored readings |
 
 ## Theming
