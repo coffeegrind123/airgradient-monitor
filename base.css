@@ -242,11 +242,16 @@ body {
   align-self: flex-start;
 }
 
+.dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
 .time-range-menu {
   display: none;
   position: absolute;
   top: 100%;
-  left: 50px;
+  left: 0;
   background: var(--menu-bg);
   color: var(--menu-text);
   border-radius: var(--menu-radius);
