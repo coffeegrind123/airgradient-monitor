@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 AIRGRADIENT_HOSTS_STR = os.environ.get('AIRGRADIENT_HOSTS', os.environ.get('AIRGRADIENT_HOST', '192.168.1.100'))
 AIRGRADIENT_HOSTS = [h.strip() for h in AIRGRADIENT_HOSTS_STR.split(',') if h.strip()]
 PORT = int(os.environ.get('PORT', '8080'))
+IQAIR_API_KEY = os.environ.get('IQAIR_API_KEY', '')
+IQAIR_CACHE = {'data': None, 'ts': 0}
+IQAIR_CACHE_SECONDS = 300
 LOCATION_ID = int(os.environ.get('LOCATION_ID', '0'))
 
 sensor_registry = {}
@@ -177,6 +180,10 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', 'https://api.airgradient.com/public/docs/api/v1/swagger.json')
             self.end_headers()
+        elif self.path.startswith('/api/outdoor'):
+            self._outdoor_request()
+        elif self.path.startswith('/api/iqair/'):
+            self._iqair_proxy()
         elif self.path.startswith('/api/history'):
             self._history_request()
         elif self.path.startswith('/api/sensors'):
@@ -268,6 +275,90 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             if conn: conn.close()
             self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _outdoor_request(self):
+        if not IQAIR_API_KEY:
+            self.send_response(503)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'IQAIR_API_KEY not configured'}).encode())
+            return
+        params = {}
+        if '?' in self.path:
+            qs = self.path.split('?', 1)[1]
+            for pair in qs.split('&'):
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    params[k] = v
+        lat = params.get('lat', '')
+        lon = params.get('lon', '')
+        if not lat or not lon:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'lat and lon required'}).encode())
+            return
+        cache_key = f"{float(lat):.2f},{float(lon):.2f}"
+        now = time.time()
+        if IQAIR_CACHE.get('key') == cache_key and IQAIR_CACHE['data'] and (now - IQAIR_CACHE['ts']) < IQAIR_CACHE_SECONDS:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Cache-Control', f'max-age={IQAIR_CACHE_SECONDS}')
+            self.end_headers()
+            self.wfile.write(IQAIR_CACHE['data'])
+            return
+        try:
+            url = f'http://api.airvisual.com/v2/nearest_city?lat={lat}&lon={lon}&key={IQAIR_API_KEY}'
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = resp.read()
+                IQAIR_CACHE['data'] = data
+                IQAIR_CACHE['ts'] = now
+                IQAIR_CACHE['key'] = cache_key
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Cache-Control', f'max-age={IQAIR_CACHE_SECONDS}')
+                self.end_headers()
+                self.wfile.write(data)
+        except Exception as e:
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _iqair_proxy(self):
+        if not IQAIR_API_KEY:
+            self.send_response(503)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'IQAIR_API_KEY not configured'}).encode())
+            return
+        sub = self.path.split('/api/iqair/')[1].split('?')[0]
+        params = {}
+        if '?' in self.path:
+            qs = self.path.split('?', 1)[1]
+            for pair in qs.split('&'):
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    params[k] = urllib.parse.unquote(v)
+        qs_parts = [f'key={IQAIR_API_KEY}']
+        for k, v in params.items():
+            qs_parts.append(f'{k}={urllib.parse.quote(v)}')
+        url = f'http://api.airvisual.com/v2/{sub}?{"&".join(qs_parts)}'
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = resp.read()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(data)
+        except Exception as e:
+            self.send_response(502)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(e)}).encode())

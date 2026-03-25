@@ -75,6 +75,34 @@
       </div>
     </div>
 
+    <div class="outdoor-panel" id="outdoorPanel">
+      <div class="outdoor-panel-header">
+        <span class="outdoor-panel-title">Outdoor Air Quality</span>
+        <span class="outdoor-panel-location" id="outdoorLocation"></span>
+      </div>
+      <div id="outdoorContent">
+        <button class="button-secondary" onclick="enableOutdoor()">
+          <span class="btn-content">Use my location</span>
+        </button>
+        <button class="button-secondary" onclick="showLocationPicker()" style="margin-left: 8px;">
+          <span class="btn-content">Select city</span>
+        </button>
+      </div>
+      <div id="locationPicker" class="outdoor-hidden">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <select id="pickCountry" class="button-secondary" style="padding:0 10px;" onchange="loadStates()">
+            <option value="">Country...</option>
+          </select>
+          <select id="pickState" class="button-secondary" style="padding:0 10px;" onchange="loadCities()">
+            <option value="">State...</option>
+          </select>
+          <select id="pickCity" class="button-secondary" style="padding:0 10px;" onchange="selectCity()">
+            <option value="">City...</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
   </div>
 
   <script>
@@ -592,10 +620,185 @@
       window.location.href = `${LOCAL_API}/export?sensor=${sensor}`;
     }
 
+    let outdoorInterval = null;
+    const OUTDOOR_POLL_MS = 300000;
+
+    function enableOutdoor() {
+      if (!navigator.geolocation) {
+        showLocationPicker();
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          localStorage.setItem('outdoor_mode', 'gps');
+          localStorage.setItem('outdoor_lat', lat);
+          localStorage.setItem('outdoor_lon', lon);
+          document.getElementById('locationPicker').classList.add('outdoor-hidden');
+          fetchOutdoorGPS(lat, lon);
+          startOutdoorPoll();
+        },
+        () => showLocationPicker()
+      );
+    }
+
+    function showLocationPicker() {
+      document.getElementById('locationPicker').classList.remove('outdoor-hidden');
+      loadCountries();
+    }
+
+    async function loadCountries() {
+      const sel = document.getElementById('pickCountry');
+      try {
+        const r = await fetch(`${LOCAL_API}/iqair/countries`);
+        const j = await r.json();
+        sel.innerHTML = '<option value="">Country...</option>';
+        j.data.forEach(c => { sel.innerHTML += `<option value="${c.country}">${c.country}</option>`; });
+        const saved = localStorage.getItem('outdoor_country');
+        if (saved) { sel.value = saved; loadStates(); }
+      } catch(e) { console.error(e); }
+    }
+
+    async function loadStates() {
+      const country = document.getElementById('pickCountry').value;
+      const sel = document.getElementById('pickState');
+      document.getElementById('pickCity').innerHTML = '<option value="">City...</option>';
+      if (!country) return;
+      try {
+        const r = await fetch(`${LOCAL_API}/iqair/states?country=${encodeURIComponent(country)}`);
+        const j = await r.json();
+        sel.innerHTML = '<option value="">State...</option>';
+        j.data.forEach(s => { sel.innerHTML += `<option value="${s.state}">${s.state}</option>`; });
+        const saved = localStorage.getItem('outdoor_state');
+        if (saved) { sel.value = saved; loadCities(); }
+      } catch(e) { console.error(e); }
+    }
+
+    async function loadCities() {
+      const country = document.getElementById('pickCountry').value;
+      const state = document.getElementById('pickState').value;
+      const sel = document.getElementById('pickCity');
+      if (!country || !state) return;
+      try {
+        const r = await fetch(`${LOCAL_API}/iqair/cities?country=${encodeURIComponent(country)}&state=${encodeURIComponent(state)}`);
+        const j = await r.json();
+        sel.innerHTML = '<option value="">City...</option>';
+        j.data.forEach(c => { sel.innerHTML += `<option value="${c.city}">${c.city}</option>`; });
+        const saved = localStorage.getItem('outdoor_city');
+        if (saved) { sel.value = saved; selectCity(); }
+      } catch(e) { console.error(e); }
+    }
+
+    async function selectCity() {
+      const country = document.getElementById('pickCountry').value;
+      const state = document.getElementById('pickState').value;
+      const city = document.getElementById('pickCity').value;
+      if (!city) return;
+      localStorage.setItem('outdoor_mode', 'city');
+      localStorage.setItem('outdoor_country', country);
+      localStorage.setItem('outdoor_state', state);
+      localStorage.setItem('outdoor_city', city);
+      fetchOutdoorCity(city, state, country);
+      startOutdoorPoll();
+    }
+
+    function startOutdoorPoll() {
+      if (outdoorInterval) clearInterval(outdoorInterval);
+      outdoorInterval = setInterval(() => {
+        const mode = localStorage.getItem('outdoor_mode');
+        if (mode === 'gps') fetchOutdoorGPS(localStorage.getItem('outdoor_lat'), localStorage.getItem('outdoor_lon'));
+        else if (mode === 'city') fetchOutdoorCity(localStorage.getItem('outdoor_city'), localStorage.getItem('outdoor_state'), localStorage.getItem('outdoor_country'));
+      }, OUTDOOR_POLL_MS);
+    }
+
+    function getAQILevel(aqi) {
+      if (aqi <= 50) return { label: 'Good', color: 'var(--airGreen)' };
+      if (aqi <= 100) return { label: 'Moderate', color: 'var(--airYellow)' };
+      if (aqi <= 150) return { label: 'Unhealthy (SG)', color: 'var(--airOrange)' };
+      if (aqi <= 200) return { label: 'Unhealthy', color: 'var(--airRed)' };
+      if (aqi <= 300) return { label: 'Very Unhealthy', color: 'var(--airPurple)' };
+      return { label: 'Hazardous', color: 'var(--airBrown)' };
+    }
+
+    function renderOutdoor(d) {
+      const p = d.current.pollution;
+      const w = d.current.weather;
+      const level = getAQILevel(p.aqius);
+      const pollutant = {p2:'PM2.5',p1:'PM10',o3:'O3',n2:'NO2',s2:'SO2',co:'CO'}[p.mainus] || p.mainus;
+
+      document.getElementById('outdoorLocation').textContent = `${d.city}, ${d.state}`;
+      document.getElementById('outdoorContent').innerHTML = `
+        <div class="measures-list" style="padding:0; gap:var(--spacing-sm);">
+          <div class="info-box chosen" style="border-color:${level.color};">
+            <div class="info-box-item">
+              <div class="icon" style="background-color:${level.color};"></div>
+              <div><div><h4>${p.aqius}</h4></div><p>US AQI (${level.label})</p></div>
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="info-box-item">
+              <div class="icon" style="background-color:var(--airBlue, rgba(27,117,188,0.75));"></div>
+              <div><div><h4>${pollutant}</h4></div><p>Main Pollutant</p></div>
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="info-box-item">
+              <div class="icon" style="background-color:rgba(27,117,188,0.75);"></div>
+              <div><div><h4>${w.tp}°C</h4></div><p>Temperature</p></div>
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="info-box-item">
+              <div class="icon" style="background-color:rgba(27,117,188,0.75);"></div>
+              <div><div><h4>${w.hu}%</h4></div><p>Humidity</p></div>
+            </div>
+          </div>
+          <div class="info-box">
+            <div class="info-box-item">
+              <div class="icon" style="background-color:rgba(27,117,188,0.75);"></div>
+              <div><div><h4>${w.ws}</h4></div><p>Wind (m/s)</p></div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function fetchOutdoorGPS(lat, lon) {
+      try {
+        const resp = await fetch(`${LOCAL_API}/outdoor?lat=${lat}&lon=${lon}`);
+        const json = await resp.json();
+        if (json.status === 'success') renderOutdoor(json.data);
+      } catch (e) { console.error('Outdoor GPS failed:', e); }
+    }
+
+    async function fetchOutdoorCity(city, state, country) {
+      try {
+        const resp = await fetch(`${LOCAL_API}/iqair/city?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}&country=${encodeURIComponent(country)}`);
+        const json = await resp.json();
+        if (json.status === 'success') renderOutdoor(json.data);
+      } catch (e) { console.error('Outdoor city failed:', e); }
+    }
+
+    function initOutdoor() {
+      const mode = localStorage.getItem('outdoor_mode');
+      if (mode === 'gps') {
+        const lat = localStorage.getItem('outdoor_lat');
+        const lon = localStorage.getItem('outdoor_lon');
+        if (lat && lon) { fetchOutdoorGPS(lat, lon); startOutdoorPoll(); }
+      } else if (mode === 'city') {
+        const city = localStorage.getItem('outdoor_city');
+        const state = localStorage.getItem('outdoor_state');
+        const country = localStorage.getItem('outdoor_country');
+        if (city) { fetchOutdoorCity(city, state, country); startOutdoorPoll(); }
+      }
+    }
+
     (async function init() {
       initChart();
       await loadSensors();
       await loadHistory();
+      initOutdoor();
       setInterval(fetchCurrentData, POLL_INTERVAL);
     })();
   </script>
