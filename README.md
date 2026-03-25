@@ -34,7 +34,7 @@ Dashboard available at `http://localhost:8085`
 
 ## Importing Historical Data
 
-1. Export your data from [app.airgradient.com](https://app.airgradient.com) as CSV (select "5 Minute Buckets")
+1. [Export your data](https://app.airgradient.com/dashboard/export) from AirGradient as CSV (select "5 Minute Buckets")
 2. Place the CSV file(s) in the `data/` directory
 3. Restart the dashboard container — files are auto-ingested on startup
 
