@@ -318,10 +318,17 @@ def query_weather_history(lat, lon, hours=168):
     try:
         cursor = conn.cursor(dictionary=True)
         if hours == 0:
-            cursor.execute("SELECT * FROM weather WHERE lat=%s AND lon=%s ORDER BY recorded_at_utc ASC", (lat, lon))
+            cursor.execute("""SELECT recorded_at_utc, summary, temperature, apparent_temperature, dew_point,
+                humidity, pressure, wind_speed, wind_gust, wind_bearing, cloud_cover,
+                uv_index, visibility, ozone, precip_intensity, precip_probability, precip_type
+                FROM weather WHERE ABS(lat-%s)<0.1 AND ABS(lon-%s)<0.1 ORDER BY recorded_at_utc ASC""", (lat, lon))
         else:
             since = datetime.utcnow() - timedelta(hours=hours)
-            cursor.execute("SELECT * FROM weather WHERE lat=%s AND lon=%s AND recorded_at_utc >= %s ORDER BY recorded_at_utc ASC", (lat, lon, since))
+            cursor.execute("""SELECT recorded_at_utc, summary, temperature, apparent_temperature, dew_point,
+                humidity, pressure, wind_speed, wind_gust, wind_bearing, cloud_cover,
+                uv_index, visibility, ozone, precip_intensity, precip_probability, precip_type
+                FROM weather WHERE ABS(lat-%s)<0.1 AND ABS(lon-%s)<0.1 AND recorded_at_utc >= %s
+                ORDER BY recorded_at_utc ASC""", (lat, lon, since))
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
@@ -506,7 +513,7 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         lat = float(params.get('lat', WEATHER_LAT or '0'))
         lon = float(params.get('lon', WEATHER_LON or '0'))
         hours = int(params.get('hours', '168'))
-        rows = query_weather_history(round(lat,2), round(lon,2), hours)
+        rows = query_weather_history(lat, lon, hours)
         self.send_response(200 if rows is not None else 503)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')

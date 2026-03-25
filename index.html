@@ -797,7 +797,7 @@
       currentValues.forEach((val, idx) => {
         const box = document.createElement('div');
         box.className = 'info-box' + (idx === selectedOutdoorMetric ? ' chosen' : '');
-        box.onclick = () => { selectedOutdoorMetric = idx; renderOutdoor(d); updateOutdoorChart(); };
+        box.onclick = () => { selectedOutdoorMetric = idx; if (lastOutdoorData) renderOutdoor(lastOutdoorData); updateOutdoorChart(); };
         box.innerHTML = `
           <div class="info-box-item">
             <div class="icon" style="background-color: ${colors[idx]};"></div>
@@ -1009,7 +1009,7 @@
       vals.forEach((val, idx) => {
         const box = document.createElement('div');
         box.className = 'info-box' + (idx === selectedWeatherMetric ? ' chosen' : '');
-        box.onclick = () => { selectedWeatherMetric = idx; renderWeather(data); updateWeatherChart(); };
+        box.onclick = () => { selectedWeatherMetric = idx; if (lastWeatherData) renderWeather(lastWeatherData); updateWeatherChart(); };
         box.innerHTML = `
           <div class="info-box-item">
             <div class="icon" style="background-color: ${colors[idx]};"></div>
@@ -1052,7 +1052,7 @@
       const values = weatherHistory.map(r => {
         const v = r[m.key];
         if (v == null) return null;
-        if (m.format) return parseFloat((m.format(v)).replace('%',''));
+        if (m.key === 'humidity' || m.key === 'cloud_cover' || m.key === 'precip_probability') return v != null ? Math.round(v * 100) : null;
         return parseFloat(v);
       });
       const colors = values.map(v => v != null ? m.colorFn(v) : 'transparent');
