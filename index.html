@@ -726,25 +726,45 @@
       return { label: 'Hazardous', color: 'var(--airBrown)' };
     }
 
+    function aqiToPM25(aqi) {
+      const bp = [
+        [0, 50, 0, 12.0],
+        [51, 100, 12.1, 35.4],
+        [101, 150, 35.5, 55.4],
+        [151, 200, 55.5, 150.4],
+        [201, 300, 150.5, 250.4],
+        [301, 400, 250.5, 350.4],
+        [401, 500, 350.5, 500.4]
+      ];
+      for (const [iLow, iHigh, cLow, cHigh] of bp) {
+        if (aqi >= iLow && aqi <= iHigh) {
+          return ((cHigh - cLow) / (iHigh - iLow)) * (aqi - iLow) + cLow;
+        }
+      }
+      return aqi > 500 ? 500 : 0;
+    }
+
     function renderOutdoor(d) {
       const p = d.current.pollution;
       const w = d.current.weather;
-      const level = getAQILevel(p.aqius);
-      const pollutant = {p2:'PM2.5',p1:'PM10',o3:'O3',n2:'NO2',s2:'SO2',co:'CO'}[p.mainus] || p.mainus;
       const info = 'rgba(27, 117, 188, 0.75)';
 
       document.getElementById('outdoorLocationName').textContent = `${d.city}, ${d.state}`;
       document.getElementById('outdoorWidget').style.display = '';
       document.getElementById('outdoorLocationMenu').classList.remove('open');
 
+      const pm25est = p.mainus === 'p2' ? aqiToPM25(p.aqius) : null;
+      const pm25val = pm25est != null ? pm25est.toFixed(1) : '--';
+      const pm25color = pm25est != null ? getPM25Color(pm25est) : info;
+
       const metrics = [
-        { value: p.aqius, label: `US AQI (${level.label})`, color: level.color, chosen: true },
-        { value: pollutant, label: 'Main Pollutant', color: info },
-        { value: `${w.tp}°C`, label: 'Temperature', color: info },
-        { value: `${Math.round(w.tp * 9/5 + 32)}°F`, label: 'Temperature', color: info },
-        { value: `${w.hu}%`, label: 'Humidity', color: info },
-        { value: `${w.ws} m/s`, label: 'Wind', color: info },
-        { value: `${w.pr} hPa`, label: 'Pressure', color: info },
+        { value: pm25val, label: 'PM<sub>2.5</sub> (µg/m³)', color: pm25color, chosen: true },
+        { value: p.aqius, label: 'PM<sub>2.5</sub> (US AQI)', color: getAQIColor(p.aqius) },
+        { value: `${w.hu}`, label: 'Humidity (%)', color: info },
+        { value: `${w.tp}`, label: 'Temperature (°C)', color: info },
+        { value: `${Math.round(w.tp * 9/5 + 32)}`, label: 'Temperature (°F)', color: info },
+        { value: `${w.ws}`, label: 'Wind (m/s)', color: info },
+        { value: `${w.pr}`, label: 'Pressure (hPa)', color: info },
       ];
 
       const container = document.getElementById('outdoorMeasures');
