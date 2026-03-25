@@ -36,6 +36,9 @@ services:
       - OUTDOOR_CITY=${OUTDOOR_CITY:-}
       - OUTDOOR_STATE=${OUTDOOR_STATE:-}
       - OUTDOOR_COUNTRY=${OUTDOOR_COUNTRY:-}
+      - PIRATE_WEATHER_KEY=${PIRATE_WEATHER_KEY:-}
+      - WEATHER_LAT=${WEATHER_LAT:-}
+      - WEATHER_LON=${WEATHER_LON:-}
     volumes:
       - "//c/users/user/downloads/as/data/airgradient/data:/data"
     depends_on:

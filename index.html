@@ -110,6 +110,22 @@
     </div>
   </div>
 
+  <div class="air-quality-widget" id="weatherWidget" style="display:none;">
+    <div style="height: 4px; margin-top: 10px; margin-bottom: 5px;"></div>
+    <div class="header-row">
+      <button class="button-secondary" style="cursor:default;">
+        <span class="btn-content">
+          <span class="text-ellipsis" id="weatherSummary">Weather</span>
+        </span>
+      </button>
+      <span style="margin-left:auto; font-size:11px; opacity:0.4;">Powered by PirateWeather</span>
+    </div>
+    <div class="measures-list" id="weatherMeasures"></div>
+    <div class="charts-container">
+      <canvas id="weatherChart"></canvas>
+    </div>
+  </div>
+
   <script>
     const LOCAL_API = '/api';
     const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -765,27 +781,29 @@
       const pm25val = pm25est != null ? pm25est.toFixed(1) : '--';
       const pm25color = pm25est != null ? getPM25Color(pm25est) : info;
 
-      const metrics = [
-        { value: pm25val, label: 'PM<sub>2.5</sub> (µg/m³)', color: pm25color, chosen: true },
-        { value: p.aqius, label: 'PM<sub>2.5</sub> (US AQI)', color: getAQIColor(p.aqius) },
-        { value: `${w.hu}`, label: 'Humidity (%)', color: info },
-        { value: `${w.tp}`, label: 'Temperature (°C)', color: info },
-        { value: `${Math.round(w.tp * 9/5 + 32)}`, label: 'Temperature (°F)', color: info },
-        { value: `${w.ws}`, label: 'Wind (m/s)', color: info },
-        { value: `${w.pr}`, label: 'Pressure (hPa)', color: info },
+      const currentValues = [
+        pm25val, p.aqius, w.hu, w.tp, Math.round(w.tp * 9/5 + 32), w.ws, w.pr
+      ];
+      const colors = [
+        pm25color, getAQIColor(p.aqius), info, info, info, info, info
+      ];
+      const htmlLabels = [
+        'PM<sub>2.5</sub> (µg/m³)', 'PM<sub>2.5</sub> (US AQI)', 'Humidity (%)',
+        'Temperature (°C)', 'Temperature (°F)', 'Wind (m/s)', 'Pressure (hPa)'
       ];
 
       const container = document.getElementById('outdoorMeasures');
       container.innerHTML = '';
-      metrics.forEach(m => {
+      currentValues.forEach((val, idx) => {
         const box = document.createElement('div');
-        box.className = 'info-box' + (m.chosen ? ' chosen' : '');
+        box.className = 'info-box' + (idx === selectedOutdoorMetric ? ' chosen' : '');
+        box.onclick = () => { selectedOutdoorMetric = idx; renderOutdoor(d); updateOutdoorChart(); };
         box.innerHTML = `
           <div class="info-box-item">
-            <div class="icon" style="background-color: ${m.color};"></div>
+            <div class="icon" style="background-color: ${colors[idx]};"></div>
             <div>
-              <div><h4>${m.value}</h4></div>
-              <p>${m.label}</p>
+              <div><h4>${val}</h4></div>
+              <p>${htmlLabels[idx]}</p>
             </div>
           </div>
         `;
@@ -793,11 +811,13 @@
       });
     }
 
+    let lastOutdoorData = null;
+
     async function fetchOutdoorGPS(lat, lon) {
       try {
         const resp = await fetch(`${LOCAL_API}/outdoor?lat=${lat}&lon=${lon}`);
         const json = await resp.json();
-        if (json.status === 'success') renderOutdoor(json.data);
+        if (json.status === 'success') { lastOutdoorData = json.data; renderOutdoor(json.data); }
       } catch (e) { console.error('Outdoor GPS failed:', e); }
     }
 
@@ -805,13 +825,24 @@
       try {
         const resp = await fetch(`${LOCAL_API}/iqair/city?city=${encodeURIComponent(city)}&state=${encodeURIComponent(state)}&country=${encodeURIComponent(country)}`);
         const json = await resp.json();
-        if (json.status === 'success') renderOutdoor(json.data);
+        if (json.status === 'success') { lastOutdoorData = json.data; renderOutdoor(json.data); }
       } catch (e) { console.error('Outdoor city failed:', e); }
     }
 
     let outdoorCity = '', outdoorState = '', outdoorCountry = '';
     let outdoorChart = null;
     let outdoorHistory = [];
+    let selectedOutdoorMetric = 0;
+
+    const OUTDOOR_METRICS = [
+      { key: 'pm25_estimated', label: 'PM2.5 (µg/m³)', unit: 'µg/m³', colorFn: getPM25Color, whoLine: 15, whoLabel: 'WHO 24h Guideline' },
+      { key: 'aqi_us', label: 'PM2.5 (US AQI)', unit: 'AQI', colorFn: getAQIColor },
+      { key: 'humidity', label: 'Humidity (%)', unit: '%', colorFn: () => 'rgba(27,117,188,0.75)' },
+      { key: 'temp_c', label: 'Temperature (°C)', unit: '°C', colorFn: () => 'rgba(27,117,188,0.75)' },
+      { key: 'temp_f', label: 'Temperature (°F)', unit: '°F', colorFn: () => 'rgba(27,117,188,0.75)' },
+      { key: 'wind_speed', label: 'Wind (m/s)', unit: 'm/s', colorFn: () => 'rgba(27,117,188,0.75)' },
+      { key: 'pressure', label: 'Pressure (hPa)', unit: 'hPa', colorFn: () => 'rgba(27,117,188,0.75)' },
+    ];
 
     async function initOutdoor() {
       try {
@@ -903,9 +934,13 @@
 
     function updateOutdoorChart() {
       if (!outdoorChart || !outdoorHistory.length) return;
+      const m = OUTDOOR_METRICS[selectedOutdoorMetric];
       const labels = outdoorHistory.map(r => formatLabel(new Date(r.recorded_at_utc)));
-      const values = outdoorHistory.map(r => r.pm25_estimated);
-      const colors = values.map(v => v != null ? getPM25Color(v) : 'transparent');
+      const values = outdoorHistory.map(r => {
+        if (m.key === 'temp_f') return r.temp_c != null ? Math.round(r.temp_c * 9/5 + 32) : null;
+        return r[m.key];
+      });
+      const colors = values.map(v => v != null ? m.colorFn(v) : 'transparent');
 
       outdoorChart.data.labels = labels;
       outdoorChart.data.datasets[0].data = values;
@@ -914,15 +949,158 @@
       const valid = values.filter(v => v != null);
       const avg = valid.length ? (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(1) : '0';
 
-      outdoorChart.options.plugins.annotation.annotations = {
-        whoLine: { type: 'line', yMin: 15, yMax: 15, borderColor: 'rgba(255,255,255,0.4)', borderWidth: 1,
-          label: { display: true, content: 'WHO 24h Guideline', position: 'start', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
-        },
-        avgLine: { type: 'line', yMin: parseFloat(avg), yMax: parseFloat(avg), borderColor: 'rgba(29,226,8,0.6)', borderWidth: 1, borderDash: [4,4],
-          label: { display: true, content: `Average: ${avg} µg/m³`, position: 'center', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
+      const annotations = {};
+      if (m.whoLine != null) {
+        annotations.whoLine = { type: 'line', yMin: m.whoLine, yMax: m.whoLine, borderColor: 'rgba(255,255,255,0.4)', borderWidth: 1,
+          label: { display: true, content: m.whoLabel || 'Guideline', position: 'start', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
+        };
+        outdoorChart.options.scales.y.suggestedMax = m.whoLine + 10;
+      } else {
+        delete outdoorChart.options.scales.y.suggestedMax;
+      }
+      annotations.avgLine = { type: 'line', yMin: parseFloat(avg), yMax: parseFloat(avg), borderColor: 'rgba(29,226,8,0.6)', borderWidth: 1, borderDash: [4,4],
+        label: { display: true, content: `Average: ${avg} ${m.unit}`, position: 'center', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
+      };
+
+      outdoorChart.options.plugins.annotation.annotations = annotations;
+      outdoorChart.options.plugins.tooltip.callbacks.label = (item) => ` ${m.label}: ${item.raw} ${m.unit}`;
+      outdoorChart.update('none');
+    }
+
+    let weatherChart = null;
+    let weatherHistory = [];
+    let selectedWeatherMetric = 0;
+    const wInfo = 'rgba(27,117,188,0.75)';
+
+    const WEATHER_METRICS = [
+      { key: 'temperature', label: 'Temperature (°C)', unit: '°C', colorFn: () => wInfo },
+      { key: 'apparent_temperature', label: 'Feels Like (°C)', unit: '°C', colorFn: () => wInfo },
+      { key: 'humidity', label: 'Humidity', unit: '', colorFn: () => wInfo, format: v => Math.round(v*100)+'%' },
+      { key: 'pressure', label: 'Pressure (hPa)', unit: 'hPa', colorFn: () => wInfo },
+      { key: 'wind_speed', label: 'Wind (m/s)', unit: 'm/s', colorFn: () => wInfo },
+      { key: 'wind_gust', label: 'Gust (m/s)', unit: 'm/s', colorFn: () => wInfo },
+      { key: 'cloud_cover', label: 'Cloud Cover', unit: '', colorFn: () => wInfo, format: v => Math.round(v*100)+'%' },
+      { key: 'uv_index', label: 'UV Index', unit: '', colorFn: () => 'rgba(226,224,32,0.75)' },
+      { key: 'visibility', label: 'Visibility (km)', unit: 'km', colorFn: () => wInfo },
+      { key: 'dew_point', label: 'Dew Point (°C)', unit: '°C', colorFn: () => wInfo },
+      { key: 'ozone', label: 'Ozone (DU)', unit: 'DU', colorFn: () => wInfo },
+      { key: 'precip_intensity', label: 'Precip (mm/h)', unit: 'mm/h', colorFn: () => 'rgba(27,117,188,0.75)' },
+      { key: 'precip_probability', label: 'Precip Chance', unit: '', colorFn: () => wInfo, format: v => Math.round(v*100)+'%' },
+    ];
+
+    function renderWeather(data) {
+      const c = data.currently;
+      document.getElementById('weatherWidget').style.display = '';
+      document.getElementById('weatherSummary').textContent = c.summary || 'Weather';
+
+      const vals = [
+        c.temperature?.toFixed(1), c.apparentTemperature?.toFixed(1),
+        Math.round((c.humidity||0)*100)+'%', Math.round(c.pressure),
+        c.windSpeed?.toFixed(1), c.windGust?.toFixed(1),
+        Math.round((c.cloudCover||0)*100)+'%', c.uvIndex?.toFixed(1),
+        c.visibility?.toFixed(1), c.dewPoint?.toFixed(1),
+        Math.round(c.ozone||0), c.precipIntensity?.toFixed(2),
+        Math.round((c.precipProbability||0)*100)+'%'
+      ];
+      const colors = WEATHER_METRICS.map(m => m.colorFn(0));
+
+      const container = document.getElementById('weatherMeasures');
+      container.innerHTML = '';
+      vals.forEach((val, idx) => {
+        const box = document.createElement('div');
+        box.className = 'info-box' + (idx === selectedWeatherMetric ? ' chosen' : '');
+        box.onclick = () => { selectedWeatherMetric = idx; renderWeather(data); updateWeatherChart(); };
+        box.innerHTML = `
+          <div class="info-box-item">
+            <div class="icon" style="background-color: ${colors[idx]};"></div>
+            <div>
+              <div><h4>${val != null ? val : '--'}</h4></div>
+              <p>${WEATHER_METRICS[idx].label}</p>
+            </div>
+          </div>
+        `;
+        container.appendChild(box);
+      });
+    }
+
+    function initWeatherChart() {
+      const ctx = document.getElementById('weatherChart');
+      if (!ctx || weatherChart) return;
+      weatherChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 0, barPercentage: 0.9, categoryPercentage: 0.9 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+          plugins: { legend: { display: false },
+            tooltip: { backgroundColor: 'rgba(0,0,0,0.8)',
+              callbacks: { title: (items) => { if (!items.length) return ''; const e = weatherHistory[items[0].dataIndex]; return e ? formatTooltipDate(new Date(e.recorded_at_utc)) : ''; } }
+            },
+            annotation: { annotations: {} }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: cssVar('--chart-tick-color')||'#fff', font: { family: cssVar('--font-primary'), size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+            y: { beginAtZero: false, grid: { color: cssVar('--chart-grid-color'), drawBorder: false }, ticks: { color: cssVar('--chart-tick-color')||'#fff', font: { family: cssVar('--font-primary'), size: 11 }, padding: 4 } }
+          }
+        }
+      });
+    }
+
+    function updateWeatherChart() {
+      if (!weatherChart || !weatherHistory.length) return;
+      const m = WEATHER_METRICS[selectedWeatherMetric];
+      const labels = weatherHistory.map(r => formatLabel(new Date(r.recorded_at_utc)));
+      const values = weatherHistory.map(r => {
+        const v = r[m.key];
+        if (v == null) return null;
+        if (m.format) return parseFloat((m.format(v)).replace('%',''));
+        return parseFloat(v);
+      });
+      const colors = values.map(v => v != null ? m.colorFn(v) : 'transparent');
+      weatherChart.data.labels = labels;
+      weatherChart.data.datasets[0].data = values;
+      weatherChart.data.datasets[0].backgroundColor = colors;
+
+      const valid = values.filter(v => v != null);
+      const avg = valid.length ? (valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(1) : '0';
+      const unit = m.format ? '%' : m.unit;
+      weatherChart.options.plugins.annotation.annotations = {
+        avgLine: { type:'line', yMin:parseFloat(avg), yMax:parseFloat(avg), borderColor:'rgba(29,226,8,0.6)', borderWidth:1, borderDash:[4,4],
+          label: { display:true, content:`Avg: ${avg} ${unit}`, position:'center', backgroundColor:'rgba(29,226,8,0.85)', color:'#fff', font:{size:11,family:cssVar('--font-primary'),weight:'bold'}, padding:{top:3,bottom:3,left:6,right:6} }
         }
       };
-      outdoorChart.update('none');
+      weatherChart.options.plugins.tooltip.callbacks.label = (item) => ` ${m.label}: ${item.raw} ${unit}`;
+      weatherChart.update('none');
+    }
+
+    let lastWeatherData = null;
+    async function fetchWeather() {
+      try {
+        const resp = await fetch(`${LOCAL_API}/weather`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (data.currently) {
+          lastWeatherData = data;
+          renderWeather(data);
+        }
+      } catch(e) { console.error('Weather fetch failed:', e); }
+    }
+
+    async function loadWeatherHistory() {
+      try {
+        const resp = await fetch(`${LOCAL_API}/weather/history?hours=168`);
+        const rows = await resp.json();
+        if (Array.isArray(rows) && rows.length) {
+          weatherHistory = rows;
+          updateWeatherChart();
+        }
+      } catch(e) { console.error('Weather history failed:', e); }
+    }
+
+    async function initWeather() {
+      initWeatherChart();
+      await fetchWeather();
+      await loadWeatherHistory();
+      setInterval(fetchWeather, OUTDOOR_POLL_MS);
     }
 
     (async function init() {
@@ -930,6 +1108,7 @@
       await loadSensors();
       await loadHistory();
       initOutdoor();
+      initWeather();
       setInterval(fetchCurrentData, POLL_INTERVAL);
     })();
   </script>

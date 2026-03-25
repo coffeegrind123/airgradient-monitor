@@ -19,6 +19,10 @@ LOCATION_ID = int(os.environ.get('LOCATION_ID', '0'))
 OUTDOOR_CITY = os.environ.get('OUTDOOR_CITY', '')
 OUTDOOR_STATE = os.environ.get('OUTDOOR_STATE', '')
 OUTDOOR_COUNTRY = os.environ.get('OUTDOOR_COUNTRY', '')
+PIRATE_WEATHER_KEY = os.environ.get('PIRATE_WEATHER_KEY', '')
+WEATHER_LAT = os.environ.get('WEATHER_LAT', '')
+WEATHER_LON = os.environ.get('WEATHER_LON', '')
+PIRATE_CACHE = {'data': None, 'ts': 0}
 
 sensor_registry = {}
 
@@ -269,12 +273,93 @@ def outdoor_collector_loop():
         time.sleep(IQAIR_CACHE_SECONDS)
 
 
+def store_weather(data):
+    conn = get_db()
+    if not conn:
+        return
+    try:
+        c = data.get('currently', {})
+        ts = datetime.utcfromtimestamp(c['time'])
+        lat = float(data['latitude'])
+        lon = float(data['longitude'])
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO weather (lat, lon, recorded_at_utc, summary, icon,
+                temperature, apparent_temperature, dew_point, humidity, pressure,
+                wind_speed, wind_gust, wind_bearing, cloud_cover, uv_index,
+                visibility, ozone, precip_intensity, precip_probability, precip_type
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+                summary=VALUES(summary), icon=VALUES(icon), temperature=VALUES(temperature),
+                apparent_temperature=VALUES(apparent_temperature), dew_point=VALUES(dew_point),
+                humidity=VALUES(humidity), pressure=VALUES(pressure), wind_speed=VALUES(wind_speed),
+                wind_gust=VALUES(wind_gust), wind_bearing=VALUES(wind_bearing),
+                cloud_cover=VALUES(cloud_cover), uv_index=VALUES(uv_index),
+                visibility=VALUES(visibility), ozone=VALUES(ozone),
+                precip_intensity=VALUES(precip_intensity), precip_probability=VALUES(precip_probability),
+                precip_type=VALUES(precip_type)
+        """, (lat, lon, ts, c.get('summary'), c.get('icon'),
+              c.get('temperature'), c.get('apparentTemperature'), c.get('dewPoint'),
+              c.get('humidity'), c.get('pressure'), c.get('windSpeed'), c.get('windGust'),
+              c.get('windBearing'), c.get('cloudCover'), c.get('uvIndex'),
+              c.get('visibility'), c.get('ozone'), c.get('precipIntensity'),
+              c.get('precipProbability'), c.get('precipType')))
+        conn.commit()
+        cursor.close()
+    except Exception as e:
+        print(f"Weather DB store error: {e}", flush=True)
+    finally:
+        conn.close()
+
+def query_weather_history(lat, lon, hours=168):
+    conn = get_db()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        if hours == 0:
+            cursor.execute("SELECT * FROM weather WHERE lat=%s AND lon=%s ORDER BY recorded_at_utc ASC", (lat, lon))
+        else:
+            since = datetime.utcnow() - timedelta(hours=hours)
+            cursor.execute("SELECT * FROM weather WHERE lat=%s AND lon=%s AND recorded_at_utc >= %s ORDER BY recorded_at_utc ASC", (lat, lon, since))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for r in rows:
+            if r.get('recorded_at_utc'):
+                r['recorded_at_utc'] = r['recorded_at_utc'].isoformat() + 'Z'
+        return rows
+    except Exception as e:
+        print(f"Weather DB query error: {e}", flush=True)
+        if conn: conn.close()
+        return None
+
+def weather_collector_loop():
+    while True:
+        if PIRATE_WEATHER_KEY and WEATHER_LAT and WEATHER_LON:
+            try:
+                url = f'https://api.pirateweather.net/forecast/{PIRATE_WEATHER_KEY}/{WEATHER_LAT},{WEATHER_LON}?units=si'
+                with urllib.request.urlopen(url, timeout=15) as resp:
+                    data = json.loads(resp.read())
+                    PIRATE_CACHE['data'] = data
+                    PIRATE_CACHE['ts'] = time.time()
+                    if db_available:
+                        store_weather(data)
+            except Exception as e:
+                print(f"Weather collector error: {e}", flush=True)
+        time.sleep(IQAIR_CACHE_SECONDS)
+
+
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/swagger' or self.path == '/api/docs':
             self.send_response(302)
             self.send_header('Location', 'https://api.airgradient.com/public/docs/api/v1/swagger.json')
             self.end_headers()
+        elif self.path.startswith('/api/weather/history'):
+            self._weather_history()
+        elif self.path.startswith('/api/weather'):
+            self._weather_current()
         elif self.path.startswith('/api/outdoor/config'):
             self._outdoor_config()
         elif self.path.startswith('/api/outdoor/history'):
@@ -377,6 +462,56 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _weather_current(self):
+        if PIRATE_CACHE.get('data') and (time.time() - PIRATE_CACHE['ts']) < IQAIR_CACHE_SECONDS:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(PIRATE_CACHE['data']).encode())
+            return
+        if not PIRATE_WEATHER_KEY or not WEATHER_LAT or not WEATHER_LON:
+            self.send_response(503)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'PIRATE_WEATHER_KEY/WEATHER_LAT/WEATHER_LON not configured'}).encode())
+            return
+        try:
+            url = f'https://api.pirateweather.net/forecast/{PIRATE_WEATHER_KEY}/{WEATHER_LAT},{WEATHER_LON}?units=si'
+            with urllib.request.urlopen(url, timeout=15) as resp:
+                data = json.loads(resp.read())
+                PIRATE_CACHE['data'] = data
+                PIRATE_CACHE['ts'] = time.time()
+                if db_available: store_weather(data)
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode())
+        except Exception as e:
+            self.send_response(502)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _weather_history(self):
+        params = {}
+        if '?' in self.path:
+            qs = self.path.split('?', 1)[1]
+            for pair in qs.split('&'):
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    params[k] = v
+        lat = float(params.get('lat', WEATHER_LAT or '0'))
+        lon = float(params.get('lon', WEATHER_LON or '0'))
+        hours = int(params.get('hours', '168'))
+        rows = query_weather_history(round(lat,2), round(lon,2), hours)
+        self.send_response(200 if rows is not None else 503)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(rows if rows else []).encode())
 
     def _outdoor_config(self):
         config = {
@@ -616,9 +751,27 @@ if __name__ == '__main__':
         if OUTDOOR_CITY and OUTDOOR_COUNTRY:
             outdoor_collector_cities.append((OUTDOOR_CITY, OUTDOOR_STATE, OUTDOOR_COUNTRY))
             print(f"Outdoor location configured: {OUTDOOR_CITY}, {OUTDOOR_STATE}, {OUTDOOR_COUNTRY}", flush=True)
+            if not WEATHER_LAT and OUTDOOR_CITY:
+                try:
+                    url = f'http://api.airvisual.com/v2/city?city={urllib.parse.quote(OUTDOOR_CITY)}&state={urllib.parse.quote(OUTDOOR_STATE)}&country={urllib.parse.quote(OUTDOOR_COUNTRY)}&key={IQAIR_API_KEY}'
+                    with urllib.request.urlopen(url, timeout=10) as resp:
+                        d = json.loads(resp.read())
+                        if d.get('status') == 'success':
+                            coords = d['data']['location']['coordinates']
+                            WEATHER_LAT = str(coords[1])
+                            WEATHER_LON = str(coords[0])
+                            print(f"Auto-detected weather coords: {WEATHER_LAT},{WEATHER_LON}", flush=True)
+                            store_outdoor_reading(d['data'])
+                except Exception as e:
+                    print(f"Failed to auto-detect coords: {e}", flush=True)
         t_outdoor = threading.Thread(target=outdoor_collector_loop, daemon=True)
         t_outdoor.start()
         print(f"Outdoor collector started (every {IQAIR_CACHE_SECONDS}s)", flush=True)
+
+    if db_available and PIRATE_WEATHER_KEY and (WEATHER_LAT or OUTDOOR_CITY):
+        t_weather = threading.Thread(target=weather_collector_loop, daemon=True)
+        t_weather.start()
+        print(f"Weather collector started: {WEATHER_LAT},{WEATHER_LON} (every {IQAIR_CACHE_SECONDS}s)", flush=True)
 
     server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
     print(f'Serving on http://localhost:{PORT}')
