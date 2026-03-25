@@ -52,3 +52,29 @@ CREATE TABLE IF NOT EXISTS outdoor_measures (
     INDEX idx_outdoor_city (city, country),
     UNIQUE KEY uq_outdoor_city_time (city, country, recorded_at_utc)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS weather (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    lat FLOAT NOT NULL,
+    lon FLOAT NOT NULL,
+    recorded_at_utc DATETIME NOT NULL,
+    summary VARCHAR(100),
+    icon VARCHAR(20),
+    temperature FLOAT,
+    apparent_temperature FLOAT,
+    dew_point FLOAT,
+    humidity FLOAT,
+    pressure FLOAT,
+    wind_speed FLOAT,
+    wind_gust FLOAT,
+    wind_bearing INT,
+    cloud_cover FLOAT,
+    uv_index FLOAT,
+    visibility FLOAT,
+    ozone FLOAT,
+    precip_intensity FLOAT,
+    precip_probability FLOAT,
+    precip_type VARCHAR(20),
+    INDEX idx_weather_utc (recorded_at_utc),
+    UNIQUE KEY uq_weather_loc_time (lat, lon, recorded_at_utc)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
