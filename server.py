@@ -174,12 +174,106 @@ def collector_loop(host, sensor_id):
         time.sleep(COLLECT_INTERVAL)
 
 
+def aqiToPM25(aqi):
+    bp = [(0,50,0,12.0),(51,100,12.1,35.4),(101,150,35.5,55.4),(151,200,55.5,150.4),(201,300,150.5,250.4),(301,400,250.5,350.4),(401,500,350.5,500.4)]
+    for iLow, iHigh, cLow, cHigh in bp:
+        if aqi >= iLow and aqi <= iHigh:
+            return round(((cHigh - cLow) / (iHigh - iLow)) * (aqi - iLow) + cLow, 1)
+    return 0
+
+def store_outdoor_reading(data):
+    conn = get_db()
+    if not conn:
+        return
+    try:
+        d = data
+        p = d['current']['pollution']
+        w = d['current']['weather']
+        ts = datetime.strptime(p['ts'].replace('.000Z',''), '%Y-%m-%dT%H:%M:%S')
+        pm25_est = aqiToPM25(p['aqius']) if p.get('mainus') == 'p2' else None
+
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO outdoor_measures (
+                city, state, country, recorded_at_utc,
+                aqi_us, aqi_cn, main_pollutant, pm25_estimated,
+                temp_c, humidity, pressure, wind_speed, wind_direction, weather_icon
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON DUPLICATE KEY UPDATE
+                aqi_us = VALUES(aqi_us), aqi_cn = VALUES(aqi_cn),
+                main_pollutant = VALUES(main_pollutant), pm25_estimated = VALUES(pm25_estimated),
+                temp_c = VALUES(temp_c), humidity = VALUES(humidity),
+                pressure = VALUES(pressure), wind_speed = VALUES(wind_speed),
+                wind_direction = VALUES(wind_direction), weather_icon = VALUES(weather_icon)
+        """, (
+            d['city'], d.get('state',''), d.get('country',''), ts,
+            p['aqius'], p.get('aqicn'), p.get('mainus'),
+            pm25_est, w.get('tp'), w.get('hu'), w.get('pr'),
+            w.get('ws'), w.get('wd'), w.get('ic')
+        ))
+        conn.commit()
+        cursor.close()
+    except Exception as e:
+        print(f"Outdoor DB store error: {e}", flush=True)
+    finally:
+        conn.close()
+
+def query_outdoor_history(city, country, hours=168):
+    conn = get_db()
+    if not conn:
+        return None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        if hours == 0:
+            cursor.execute("""SELECT recorded_at_utc, aqi_us, main_pollutant, pm25_estimated,
+                temp_c, humidity, pressure, wind_speed FROM outdoor_measures
+                WHERE city = %s AND country = %s ORDER BY recorded_at_utc ASC""", (city, country))
+        else:
+            since = datetime.utcnow() - timedelta(hours=hours)
+            cursor.execute("""SELECT recorded_at_utc, aqi_us, main_pollutant, pm25_estimated,
+                temp_c, humidity, pressure, wind_speed FROM outdoor_measures
+                WHERE city = %s AND country = %s AND recorded_at_utc >= %s
+                ORDER BY recorded_at_utc ASC""", (city, country, since))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        for r in rows:
+            if r.get('recorded_at_utc'):
+                r['recorded_at_utc'] = r['recorded_at_utc'].isoformat() + 'Z'
+        return rows
+    except Exception as e:
+        print(f"Outdoor DB query error: {e}", flush=True)
+        if conn: conn.close()
+        return None
+
+outdoor_collector_cities = []
+
+def outdoor_collector_loop():
+    while True:
+        for city_info in outdoor_collector_cities:
+            try:
+                city, state, country = city_info
+                url = f'http://api.airvisual.com/v2/city?city={urllib.parse.quote(city)}&state={urllib.parse.quote(state)}&country={urllib.parse.quote(country)}&key={IQAIR_API_KEY}'
+                with urllib.request.urlopen(url, timeout=10) as resp:
+                    data = json.loads(resp.read())
+                    if data.get('status') == 'success':
+                        store_outdoor_reading(data['data'])
+                        IQAIR_CACHE['data'] = json.dumps(data).encode()
+                        IQAIR_CACHE['ts'] = time.time()
+                        IQAIR_CACHE['key'] = f"{city},{country}"
+            except Exception as e:
+                print(f"Outdoor collector error ({city_info}): {e}", flush=True)
+        time.sleep(IQAIR_CACHE_SECONDS)
+
+
 class ProxyHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == '/swagger' or self.path == '/api/docs':
             self.send_response(302)
             self.send_header('Location', 'https://api.airgradient.com/public/docs/api/v1/swagger.json')
             self.end_headers()
+        elif self.path.startswith('/api/outdoor/history'):
+            self._outdoor_history_request()
         elif self.path.startswith('/api/outdoor'):
             self._outdoor_request()
         elif self.path.startswith('/api/iqair/'):
@@ -279,6 +373,36 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(e)}).encode())
 
+    def _outdoor_history_request(self):
+        params = {}
+        if '?' in self.path:
+            qs = self.path.split('?', 1)[1]
+            for pair in qs.split('&'):
+                if '=' in pair:
+                    k, v = pair.split('=', 1)
+                    params[k] = urllib.parse.unquote(v)
+        city = params.get('city', '')
+        country = params.get('country', '')
+        hours = int(params.get('hours', '168'))
+        if not city or not country:
+            self.send_response(400)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'city and country required'}).encode())
+            return
+        rows = query_outdoor_history(city, country, hours)
+        if rows is None:
+            self.send_response(503)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': 'database unavailable'}).encode())
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(rows).encode())
+
     def _outdoor_request(self):
         if not IQAIR_API_KEY:
             self.send_response(503)
@@ -318,6 +442,9 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
                 IQAIR_CACHE['data'] = data
                 IQAIR_CACHE['ts'] = now
                 IQAIR_CACHE['key'] = cache_key
+                parsed = json.loads(data)
+                if parsed.get('status') == 'success' and db_available:
+                    store_outdoor_reading(parsed['data'])
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -352,6 +479,17 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
         try:
             with urllib.request.urlopen(url, timeout=10) as resp:
                 data = resp.read()
+                if sub == 'city' and db_available:
+                    try:
+                        parsed = json.loads(data)
+                        if parsed.get('status') == 'success':
+                            store_outdoor_reading(parsed['data'])
+                            c = parsed['data']
+                            city_key = (c['city'], c.get('state',''), c.get('country',''))
+                            if city_key not in outdoor_collector_cities:
+                                outdoor_collector_cities.append(city_key)
+                                print(f"Added outdoor collector for {city_key}", flush=True)
+                    except Exception: pass
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/json')
                 self.send_header('Access-Control-Allow-Origin', '*')
@@ -455,6 +593,11 @@ if __name__ == '__main__':
             t = threading.Thread(target=collector_loop, args=(host, sid), daemon=True)
             t.start()
             print(f"Collector started for {sid} @ {host} (every {COLLECT_INTERVAL}s)", flush=True)
+
+    if db_available and IQAIR_API_KEY:
+        t_outdoor = threading.Thread(target=outdoor_collector_loop, daemon=True)
+        t_outdoor.start()
+        print(f"Outdoor collector started (every {IQAIR_CACHE_SECONDS}s)", flush=True)
 
     server = http.server.HTTPServer(('0.0.0.0', PORT), ProxyHandler)
     print(f'Serving on http://localhost:{PORT}')
