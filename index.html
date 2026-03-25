@@ -848,7 +848,7 @@
         pm25color, getAQIColor(p.aqius), info, info, info, info, info
       ];
       const htmlLabels = [
-        'PM<sub>2.5</sub> (µg/m³)', 'PM<sub>2.5</sub> (US AQI)', 'Humidity (%)',
+        'PM<sub>2.5</sub> ~est. (µg/m³)', 'PM<sub>2.5</sub> (US AQI)', 'Humidity (%)',
         'Temperature (°C)', 'Temperature (°F)', 'Wind (m/s)', 'Pressure (hPa)'
       ];
 
@@ -895,7 +895,7 @@
     let selectedOutdoorMetric = 0;
 
     const OUTDOOR_METRICS = [
-      { key: 'pm25_estimated', label: 'PM2.5 (µg/m³)', unit: 'µg/m³', colorFn: getPM25Color, whoLine: 15, whoLabel: 'WHO 24h Guideline' },
+      { key: 'pm25_estimated', label: 'PM2.5 ~est. (µg/m³)', unit: 'µg/m³', colorFn: getPM25Color, whoLine: 15, whoLabel: 'WHO 24h Guideline' },
       { key: 'aqi_us', label: 'PM2.5 (US AQI)', unit: 'AQI', colorFn: getAQIColor },
       { key: 'humidity', label: 'Humidity (%)', unit: '%', colorFn: () => 'rgba(27,117,188,0.75)' },
       { key: 'temp_c', label: 'Temperature (°C)', unit: '°C', colorFn: () => 'rgba(27,117,188,0.75)' },
