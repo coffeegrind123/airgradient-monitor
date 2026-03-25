@@ -1,0 +1,81 @@
+:root {
+  --font-primary: Catamaran, sans-serif;
+  --font-secondary: Cabin, sans-serif;
+
+  --font-weight-large: 700;
+  --font-weight-medium: 500;
+  --font-weight-regular: 400;
+  --font-weight-light: 300;
+
+  --font-size-h4: 22px;
+  --font-size-regular: 16px;
+  --font-size-small: 14px;
+  --font-size-xs: 12px;
+
+  --line-height-regular: 1.5;
+
+  --text-primary: #212121;
+
+  --airGreen: #1de208;
+  --airYellow: #e2e020;
+  --airOrange: #e26a05;
+  --airRed: #e20410;
+  --airPurple: #7f01e2;
+  --airBrown: #903305;
+
+  --spacing-xxs: 5px;
+  --spacing-xs: 8px;
+  --spacing-sm: 13px;
+  --spacing-md: 21px;
+  --spacing-lg: 34px;
+  --spacing-xl: 44px;
+
+  --widget-bg: rgb(51, 51, 51);
+  --widget-text: #fff;
+  --widget-padding: 20px;
+
+  --header-gap: 10px;
+
+  --btn-bg: transparent;
+  --btn-text: #fff;
+  --btn-border: #fff;
+  --btn-radius: 4px;
+  --btn-height: 38px;
+  --btn-hover-bg: #1c75bc;
+  --btn-hover-text: #fff;
+  --icon-btn-size: 35px;
+
+  --transition-default: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+
+  --card-max-width: 158px;
+  --card-radius: 5px;
+  --card-bg: transparent;
+  --card-hover-border: #fff;
+  --card-chosen-border: rgba(255, 255, 255, 0.8);
+  --card-inner-padding: 5px 5px 5px 10px;
+
+  --icon-bar-width: 5px;
+  --icon-bar-height: 70px;
+  --icon-bar-radius: 0px;
+
+  --card-value-size: 22px;
+  --card-value-margin: 0 0 8px 8px;
+  --card-value-line-height: 28.6px;
+  --card-label-size: 16px;
+  --card-label-color: #fff;
+  --card-label-margin: 0 0 0 5px;
+  --card-label-line-height: 24px;
+
+  --chart-height: 500px;
+  --chart-min-height: 500px;
+  --chart-max-height: 600px;
+  --chart-grid-color: rgba(255,255,255,0.1);
+  --chart-tick-color: #fff;
+
+  --menu-bg: rgb(255, 255, 255);
+  --menu-text: rgb(33, 33, 33);
+  --menu-radius: 4px;
+  --menu-shadow: rgba(33,33,33,0.2) 0px 2px 4px -1px, rgba(33,33,33,0.14) 0px 4px 5px 0px, rgba(33,33,33,0.12) 0px 1px 10px 0px;
+  --menu-hover-bg: rgba(0, 0, 0, 0.04);
+  --menu-item-height: 48px;
+}

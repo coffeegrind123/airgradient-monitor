@@ -1,0 +1,44 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: airgradient-mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=airgradient
+      - MYSQL_DATABASE=airgradient
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pairgradient"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  airgradient-dashboard:
+    build: .
+    container_name: airgradient-dashboard
+    ports:
+      - "8085:8080"
+    environment:
+      - AIRGRADIENT_HOST=${AIRGRADIENT_HOST:-192.168.1.100}
+      - PORT=8080
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=root
+      - DB_PASS=airgradient
+      - DB_NAME=airgradient
+      - SENSOR_ID=${SENSOR_ID:-}
+      - LOCATION_ID=${LOCATION_ID:-0}
+      - COLLECT_INTERVAL=60
+    volumes:
+      - "//c/users/user/downloads/as/data/airgradient/data:/data"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

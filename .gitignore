@@ -1,0 +1,13 @@
+*.csv
+*.png
+*.jpg
+*.jpeg
+data/
+__pycache__/
+*.pyc
+.env
+node_modules/
+mysql_data/
+*.log
+.DS_Store
+Thumbs.db

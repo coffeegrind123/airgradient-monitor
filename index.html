@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>AirGradient Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Catamaran:wght@100..900&family=Cabin:wght@400..700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="base.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+</head>
+<body>
+  <div class="air-quality-widget" id="widget">
+    <div style="height: 4px; margin-top: 21px; margin-bottom: 5px;"></div>
+
+    <div class="header-row">
+      <button class="button-secondary" id="monitorBtn" onclick="toggleMonitorMenu()">
+        <span class="btn-content">
+          <span class="text-ellipsis" id="locationName">Room</span>
+          <span class="arrow-down"></span>
+        </span>
+      </button>
+      <div class="time-range-menu" id="monitorMenu" style="left: 0;"></div>
+      <button class="button-secondary" id="timeRangeBtn" onclick="toggleTimeMenu()">
+        <span class="btn-content">
+          <span class="text-ellipsis" id="timeRangeLabel">Last 8 hours (5 min)</span>
+          <span class="arrow-down"></span>
+        </span>
+      </button>
+      <div class="time-range-menu" id="timeRangeMenu">
+        <div class="menu-item active" data-hours="8">Last 8 hours (5 min)</div>
+        <div class="menu-item" data-hours="12">Last 12 hours (10 min)</div>
+        <div class="menu-item" data-hours="24">Last 24 hours (15 min)</div>
+        <div class="menu-item" data-hours="48">Last 48 hours (15 min)</div>
+        <div class="menu-item" data-hours="168">Last Week (1 hour)</div>
+        <div class="menu-item" data-hours="720">Last 30 days (1 day)</div>
+        <div class="menu-item" data-hours="720">Last 30 days (1 hour)</div>
+        <div class="menu-item" data-hours="2160">Last 90 days (1 day)</div>
+        <div class="menu-item" data-hours="4320">Last 180 days (1 day)</div>
+        <div class="menu-item" data-hours="8760">Last Year (1 day)</div>
+        <div class="menu-item" data-hours="0">All</div>
+      </div>
+      <div class="download-button" title="Download current view as CSV" onclick="downloadCSV()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
+          <path d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"/>
+        </svg>
+      </div>
+      <div class="download-button" title="Download all data as CSV" onclick="downloadAllCSV()">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -960 960 960">
+          <path d="M360-460h40v-80h40q17 0 28.5-11.5T480-580v-40q0-17-11.5-28.5T440-660h-80v200Zm40-120v-40h40v40h-40Zm120 120h80q17 0 28.5-11.5T640-500v-120q0-17-11.5-28.5T600-660h-80v200Zm40-40v-120h40v120h-40Zm120 40h40v-80h40v-40h-40v-40h40v-40h-80v200ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Z"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="measures-list" id="measuresList"></div>
+
+    <div class="charts-container">
+      <canvas id="mainChart"></canvas>
+    </div>
+
+    <div class="legend" id="colorScalaContainer">
+      <div class="colors-info">
+        <div class="color-scala"></div>
+        <div class="color-labels">
+          <div class="label-item">Good</div>
+          <div class="label-item">Moderate</div>
+          <div class="label-item">Unhealthy for Sensitive Groups</div>
+          <div class="label-item">Unhealthy</div>
+          <div class="label-item">Very Unhealthy</div>
+          <div class="label-item">Hazardous</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const LOCAL_API = '/api';
+    const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    const POLL_INTERVAL = 30000;
+    const HISTORY_MAX_POINTS = 96;
+
+    const AQI_COLORS = {
+      good:                'rgba(29, 226, 8, 0.75)',
+      moderate:            'rgba(226, 224, 32, 0.75)',
+      unhealthySensitive:  'rgba(226, 106, 5, 0.75)',
+      unhealthy:           'rgba(226, 4, 16, 0.75)',
+      veryUnhealthy:       'rgba(127, 1, 226, 0.75)',
+      hazardous:           'rgba(144, 51, 5, 0.75)',
+      info:                'rgba(27, 117, 188, 0.75)'
+    };
+
+    const MEASURES_CONFIG = [
+      { key: 'pm02Compensated', label: 'PM<sub>2.5</sub> (µg/m³)', unit: 'µg/m³', chartLabel: 'PM2.5 (µg/m³)', colorFn: getPM25Color, decimals: 1, showScala: true, whoLine: 5 },
+      { key: 'pm02AQI',        label: 'PM<sub>2.5</sub> (US AQI)', unit: 'AQI',   chartLabel: 'PM2.5 (US AQI)', colorFn: getAQIColor, decimals: 0, showScala: true },
+      { key: 'rco2',            label: 'CO2 (ppm)',                  unit: 'ppm',   chartLabel: 'CO2 (ppm)', colorFn: getCO2Color, decimals: 0, showScala: false },
+      { key: 'rhumCompensated', label: 'Humidity (%)',               unit: '%',     chartLabel: 'Humidity (%)', colorFn: () => AQI_COLORS.info, decimals: 0, showScala: false },
+      { key: 'atmpCompensated', label: 'Temperature (°C)',           unit: '°C',    chartLabel: 'Temperature (°C)', colorFn: () => AQI_COLORS.info, decimals: 0, showScala: false },
+      { key: 'atmpF',           label: 'Temperature (°F)',           unit: '°F',    chartLabel: 'Temperature (°F)', colorFn: () => AQI_COLORS.info, decimals: 0, showScala: false },
+      { key: 'heatIndexC',      label: 'Heat Index (°C)',            unit: '°C',    chartLabel: 'Heat Index (°C)', colorFn: getHeatIndexColor, decimals: 1, showScala: false },
+      { key: 'tvocPpb',          label: 'TVOC (ppb)',                 unit: 'ppb',   chartLabel: 'TVOC (ppb)', colorFn: () => AQI_COLORS.info, decimals: 0, showScala: false },
+      { key: 'tvocIndex',       label: 'TVOC (Ind40)',               unit: '',      chartLabel: 'TVOC (Ind40)', colorFn: getTVOCIndexColor, decimals: 0, showScala: false },
+      { key: 'noxIndex',        label: 'NO<sub>x</sub> (Ind41)',     unit: '',      chartLabel: 'NOx (Ind41)', colorFn: getNOxIndexColor, decimals: 0, showScala: false },
+      { key: 'heatIndexF',      label: 'Heat Index (°F)',            unit: '°F',    chartLabel: 'Heat Index (°F)', colorFn: getHeatIndexColorF, decimals: 0, showScala: false }
+    ];
+
+    let selectedMeasure = 0;
+    let selectedSensor = '';
+    let historyData = [];
+    let chart = null;
+    let currentData = null;
+
+    function pm25ToAQI(pm) {
+      const bp = [
+        [0, 12.0, 0, 50],
+        [12.1, 35.4, 51, 100],
+        [35.5, 55.4, 101, 150],
+        [55.5, 150.4, 151, 200],
+        [150.5, 250.4, 201, 300],
+        [250.5, 350.4, 301, 400],
+        [350.5, 500.4, 401, 500]
+      ];
+      for (const [cLow, cHigh, iLow, iHigh] of bp) {
+        if (pm >= cLow && pm <= cHigh) {
+          return Math.round(((iHigh - iLow) / (cHigh - cLow)) * (pm - cLow) + iLow);
+        }
+      }
+      return pm > 500.4 ? 500 : 0;
+    }
+
+    function cToF(c) { return (c * 9 / 5) + 32; }
+
+    function heatIndex(tempF, rh) {
+      if (tempF < 80) return tempF;
+      let hi = -42.379 + 2.04901523 * tempF + 10.14333127 * rh
+               - 0.22475541 * tempF * rh - 0.00683783 * tempF * tempF
+               - 0.05481717 * rh * rh + 0.00122874 * tempF * tempF * rh
+               + 0.00085282 * tempF * rh * rh - 0.00000199 * tempF * tempF * rh * rh;
+      return hi;
+    }
+
+    function getPM25Color(val) {
+      if (val <= 12) return AQI_COLORS.good;
+      if (val <= 35.4) return AQI_COLORS.moderate;
+      if (val <= 55.4) return AQI_COLORS.unhealthySensitive;
+      if (val <= 150.4) return AQI_COLORS.unhealthy;
+      if (val <= 250.4) return AQI_COLORS.veryUnhealthy;
+      return AQI_COLORS.hazardous;
+    }
+
+    function getAQIColor(val) {
+      if (val <= 50) return AQI_COLORS.good;
+      if (val <= 100) return AQI_COLORS.moderate;
+      if (val <= 150) return AQI_COLORS.unhealthySensitive;
+      if (val <= 200) return AQI_COLORS.unhealthy;
+      if (val <= 300) return AQI_COLORS.veryUnhealthy;
+      return AQI_COLORS.hazardous;
+    }
+
+    function getCO2Color(val) {
+      if (val <= 600) return AQI_COLORS.good;
+      if (val <= 1000) return AQI_COLORS.moderate;
+      if (val <= 1500) return AQI_COLORS.unhealthySensitive;
+      if (val <= 2000) return AQI_COLORS.unhealthy;
+      if (val <= 5000) return AQI_COLORS.veryUnhealthy;
+      return AQI_COLORS.hazardous;
+    }
+
+    function getHeatIndexColor(val) {
+      if (val <= 26.6) return AQI_COLORS.good;
+      if (val <= 32.2) return AQI_COLORS.moderate;
+      return AQI_COLORS.unhealthy;
+    }
+
+    function getHeatIndexColorF(val) {
+      if (val <= 80) return AQI_COLORS.good;
+      if (val <= 90) return AQI_COLORS.moderate;
+      return AQI_COLORS.unhealthy;
+    }
+
+    function getTVOCIndexColor(val) {
+      if (val <= 150) return AQI_COLORS.good;
+      if (val <= 250) return AQI_COLORS.moderate;
+      if (val <= 350) return AQI_COLORS.unhealthySensitive;
+      if (val <= 500) return AQI_COLORS.unhealthy;
+      return AQI_COLORS.veryUnhealthy;
+    }
+
+    function getNOxIndexColor(val) {
+      if (val <= 20) return AQI_COLORS.good;
+      if (val <= 100) return AQI_COLORS.moderate;
+      if (val <= 200) return AQI_COLORS.unhealthySensitive;
+      if (val <= 300) return AQI_COLORS.unhealthy;
+      return AQI_COLORS.veryUnhealthy;
+    }
+
+    function enrichData(raw) {
+      const d = { ...raw };
+      d.pm02Compensated = raw.pm02Compensated != null ? raw.pm02Compensated : raw.pm02;
+      d.atmpCompensated = raw.atmpCompensated != null ? raw.atmpCompensated : raw.atmp;
+      d.rhumCompensated = raw.rhumCompensated != null ? raw.rhumCompensated : raw.rhum;
+      d.pm02AQI = pm25ToAQI(d.pm02Compensated);
+      d.atmpF = Math.round(cToF(d.atmpCompensated));
+      const hif = heatIndex(cToF(d.atmpCompensated), d.rhumCompensated);
+      d.heatIndexF = Math.round(hif);
+      d.heatIndexC = parseFloat(((hif - 32) * 5 / 9).toFixed(1));
+      d.tvocPpb = raw.tvocIndex != null ? Math.round(raw.tvocIndex) : 0;
+      d.tvocRaw = raw.tvocRaw != null ? Math.round(raw.tvocRaw) : 0;
+      d.tvocIndex = raw.tvocIndex != null ? Math.round(raw.tvocIndex) : 0;
+      d.noxIndex = raw.noxIndex != null ? Math.round(raw.noxIndex) : 0;
+      d.timestamp = new Date();
+      return d;
+    }
+
+    function formatValue(val, decimals) {
+      if (val == null || isNaN(val)) return '--';
+      return Number(val).toFixed(decimals);
+    }
+
+    function renderMeasures(data) {
+      const container = document.getElementById('measuresList');
+      container.innerHTML = '';
+
+      MEASURES_CONFIG.forEach((cfg, idx) => {
+        const val = data[cfg.key];
+        const color = cfg.colorFn(val);
+        const isChosen = idx === selectedMeasure;
+
+        const box = document.createElement('div');
+        box.className = 'info-box' + (isChosen ? ' chosen' : '');
+        box.onclick = () => {
+          selectedMeasure = idx;
+          renderMeasures(data);
+          updateChart();
+        };
+
+        box.innerHTML = `
+          <div class="info-box-item">
+            <div class="icon" style="background-color: ${color};"></div>
+            <div>
+              <div><h4>${formatValue(val, cfg.decimals)}</h4></div>
+              <p>${cfg.label}</p>
+            </div>
+          </div>
+        `;
+        container.appendChild(box);
+      });
+
+      const scalaContainer = document.getElementById('colorScalaContainer');
+      scalaContainer.style.display = MEASURES_CONFIG[selectedMeasure].showScala ? 'flex' : 'none';
+    }
+
+    function getBarColor(value) {
+      const cfg = MEASURES_CONFIG[selectedMeasure];
+      return cfg.colorFn(value);
+    }
+
+    function formatTime(date) {
+      const h = date.getHours();
+      const m = date.getMinutes();
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const h12 = h % 12 || 12;
+      if (m === 0) return `${h12}${ampm}`;
+      return `${h12}:${m.toString().padStart(2, '0')}${ampm}`;
+    }
+
+    function formatLabel(date) {
+      if (selectedHours === 0 || selectedHours > 2160) {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+      } else if (selectedHours > 168) {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } else if (selectedHours > 48) {
+        const day = date.toLocaleDateString('en-US', { weekday: 'short' });
+        return `${day} ${formatTime(date)}`;
+      } else {
+        return formatTime(date);
+      }
+    }
+
+    function formatTooltipDate(date) {
+      return date.toLocaleDateString('en-US', {
+        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
+      }) + ' ' + date.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true
+      });
+    }
+
+    function initChart() {
+      const ctx = document.getElementById('mainChart').getContext('2d');
+      const cfg = MEASURES_CONFIG[selectedMeasure];
+
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: [],
+          datasets: [{
+            data: [],
+            backgroundColor: [],
+            borderWidth: 0,
+            barPercentage: 0.9,
+            categoryPercentage: 0.9
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 300 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleFont: { family: 'Catamaran, sans-serif', size: 13 },
+              bodyFont: { family: 'Catamaran, sans-serif', size: 12 },
+              callbacks: {
+                title: (items) => {
+                  if (!items.length) return '';
+                  const idx = items[0].dataIndex;
+                  const entry = historyData[idx];
+                  if (!entry) return '';
+                  return formatTooltipDate(entry.timestamp);
+                },
+                label: (item) => {
+                  const c = MEASURES_CONFIG[selectedMeasure];
+                  return ` ${c.chartLabel}: ${item.raw} ${c.unit}`;
+                }
+              }
+            },
+            annotation: {
+              annotations: {}
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: cssVar('--chart-tick-color') || '#fff',
+                font: { family: cssVar('--font-primary') || 'sans-serif', size: 11 },
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 10
+              }
+            },
+            y: {
+              beginAtZero: true,
+              grid: {
+                color: cssVar('--chart-grid-color') || 'rgba(255,255,255,0.1)',
+                drawBorder: false
+              },
+              ticks: {
+                color: cssVar('--chart-tick-color') || '#fff',
+                font: { family: cssVar('--font-primary') || 'sans-serif', size: 11 },
+                padding: 4
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function updateChart() {
+      if (!chart) return;
+
+      const cfg = MEASURES_CONFIG[selectedMeasure];
+      const labels = historyData.map(d => formatLabel(d.timestamp));
+      const values = historyData.map(d => {
+        const v = d[cfg.key];
+        return v != null ? parseFloat(Number(v).toFixed(cfg.decimals)) : null;
+      });
+      const colors = values.map(v => v != null ? getBarColor(v) : 'transparent');
+
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = values;
+      chart.data.datasets[0].backgroundColor = colors;
+
+      const annotations = {};
+      if (cfg.whoLine != null) {
+        annotations.whoLine = {
+          type: 'line',
+          yMin: cfg.whoLine,
+          yMax: cfg.whoLine,
+          borderColor: 'rgba(255, 255, 255, 0.6)',
+          borderWidth: 1,
+          label: {
+            display: true,
+            content: `WHO Annual Air Quality Guideline`,
+            position: 'start',
+            backgroundColor: 'rgba(29, 226, 8, 0.85)',
+            color: '#fff',
+            font: { size: 11, family: 'Catamaran, sans-serif', weight: 'bold' },
+            padding: { top: 3, bottom: 3, left: 6, right: 6 }
+          }
+        };
+      }
+      if (cfg.whoLine != null) {
+        chart.options.scales.y.suggestedMax = cfg.whoLine + 3;
+      } else {
+        delete chart.options.scales.y.suggestedMax;
+      }
+
+      const avg = values.filter(v => v != null);
+      const avgVal = avg.length ? (avg.reduce((a, b) => a + b, 0) / avg.length).toFixed(1) : '0';
+
+      const avgNum = parseFloat(avgVal);
+      const avgText = `${selectedHours === 0 ? 'All Time' : selectedHours + ' Hours'} Average: ${avgVal} ${cfg.unit}`;
+      annotations.avgLine = {
+        type: 'line',
+        yMin: avgNum,
+        yMax: avgNum,
+        borderColor: 'rgba(29, 226, 8, 0.6)',
+        borderWidth: 1,
+        borderDash: [4, 4],
+        label: {
+          display: true,
+          content: avgText,
+          position: 'center',
+          backgroundColor: 'rgba(29, 226, 8, 0.85)',
+          color: '#fff',
+          font: { size: 11, family: 'Catamaran, sans-serif', weight: 'bold' },
+          padding: { top: 3, bottom: 3, left: 6, right: 6 }
+        }
+      };
+
+      chart.options.plugins.subtitle = { display: false };
+      chart.options.plugins.annotation.annotations = annotations;
+
+      chart.update('none');
+    }
+
+    let selectedHours = 8;
+
+    function enrichDbRow(row) {
+      const d = {};
+      d.timestamp = new Date(row.recorded_at_utc);
+      d.pm02Compensated = row.pm25_corrected;
+      d.pm02AQI = pm25ToAQI(row.pm25_corrected || 0);
+      d.rco2 = row.co2_corrected || row.co2_raw;
+      d.rhumCompensated = row.humidity_corrected || row.humidity_raw;
+      d.atmpCompensated = row.temp_corrected || row.temp_raw;
+      d.atmpF = Math.round(cToF(d.atmpCompensated || 0));
+      d.heatIndexC = row.heat_index_c != null ? row.heat_index_c : d.atmpCompensated;
+      d.heatIndexF = Math.round(cToF(d.heatIndexC || 0));
+      d.tvocPpb = row.tvoc_index != null ? Math.round(row.tvoc_index) : 0;
+      d.tvocIndex = row.tvoc_index != null ? Math.round(row.tvoc_index) : 0;
+      d.noxIndex = row.nox_index != null ? Math.round(row.nox_index) : 0;
+      return d;
+    }
+
+    async function loadHistory() {
+      try {
+        const sensor = encodeURIComponent(selectedSensor);
+        const resp = await fetch(`${LOCAL_API}/history?hours=${selectedHours}&sensor=${sensor}`);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const rows = await resp.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          historyData = rows.map(enrichDbRow);
+          currentData = historyData[historyData.length - 1];
+          renderMeasures(currentData);
+          updateChart();
+          return;
+        }
+      } catch (e) {
+        console.error('History load failed, falling back to live:', e);
+      }
+      await loadLiveFallback();
+    }
+
+    async function loadLiveFallback() {
+      try {
+        const resp = await fetch(`${LOCAL_API}/measures/current`);
+        if (!resp.ok) return;
+        const raw = await resp.json();
+        const data = enrichData(raw);
+        historyData = [data];
+        currentData = data;
+        renderMeasures(data);
+        updateChart();
+      } catch (e) {
+        console.error('Live fallback failed:', e);
+      }
+    }
+
+    async function fetchCurrentData() {
+      try {
+        const response = await fetch(`${LOCAL_API}/measures/current`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const raw = await response.json();
+        currentData = enrichData(raw);
+
+        historyData.push(currentData);
+        if (historyData.length > HISTORY_MAX_POINTS) {
+          historyData.shift();
+        }
+
+        renderMeasures(currentData);
+        updateChart();
+      } catch (err) {
+        console.error('Failed to fetch data:', err);
+      }
+    }
+
+    function toggleTimeMenu() {
+      const menu = document.getElementById('timeRangeMenu');
+      menu.classList.toggle('open');
+    }
+
+    document.addEventListener('click', (e) => {
+      const timeMenu = document.getElementById('timeRangeMenu');
+      const timeBtn = document.getElementById('timeRangeBtn');
+      if (!timeMenu.contains(e.target) && !timeBtn.contains(e.target)) {
+        timeMenu.classList.remove('open');
+      }
+      const monMenu = document.getElementById('monitorMenu');
+      const monBtn = document.getElementById('monitorBtn');
+      if (!monMenu.contains(e.target) && !monBtn.contains(e.target)) {
+        monMenu.classList.remove('open');
+      }
+    });
+
+    document.querySelectorAll('.time-range-menu .menu-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.time-range-menu .menu-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        document.getElementById('timeRangeLabel').textContent = item.textContent;
+        document.getElementById('timeRangeMenu').classList.remove('open');
+        selectedHours = parseInt(item.dataset.hours);
+        if (isNaN(selectedHours)) selectedHours = 8;
+        loadHistory();
+      });
+    });
+
+    function downloadCSV() {
+      if (!historyData.length) return;
+      const headers = ['timestamp', ...MEASURES_CONFIG.map(c => c.chartLabel)];
+      const rows = historyData.map(d => {
+        return [
+          d.timestamp.toISOString(),
+          ...MEASURES_CONFIG.map(c => d[c.key] != null ? d[c.key] : '')
+        ].join(',');
+      });
+      const csv = [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `airgradient_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    let sensorList = [];
+
+    async function loadSensors() {
+      try {
+        const resp = await fetch(`${LOCAL_API}/sensors`);
+        if (!resp.ok) return;
+        sensorList = await resp.json();
+        if (sensorList.length > 0) {
+          selectedSensor = sensorList[0].sensor_id;
+          document.getElementById('locationName').textContent = sensorList[0].location_name || sensorList[0].sensor_id;
+        }
+        const menu = document.getElementById('monitorMenu');
+        menu.innerHTML = '';
+        sensorList.forEach(s => {
+          const item = document.createElement('div');
+          item.className = 'menu-item';
+          item.textContent = s.location_name || s.sensor_id;
+          item.onclick = () => switchMonitor(s.sensor_id, s.location_name || s.sensor_id);
+          menu.appendChild(item);
+        });
+      } catch (e) {
+        console.error('Failed to load sensors:', e);
+      }
+    }
+
+    function toggleMonitorMenu() {
+      const menu = document.getElementById('monitorMenu');
+      menu.classList.toggle('open');
+    }
+
+    function switchMonitor(sensorId, name) {
+      selectedSensor = sensorId;
+      document.getElementById('locationName').textContent = name;
+      document.getElementById('monitorMenu').classList.remove('open');
+      loadHistory();
+    }
+
+    function downloadAllCSV() {
+      const sensor = encodeURIComponent(selectedSensor);
+      window.location.href = `${LOCAL_API}/export?sensor=${sensor}`;
+    }
+
+    (async function init() {
+      initChart();
+      await loadSensors();
+      await loadHistory();
+      setInterval(fetchCurrentData, POLL_INTERVAL);
+    })();
+  </script>
+</body>
+</html>
