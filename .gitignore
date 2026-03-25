@@ -1,5 +1,6 @@
 *.csv
 *.png
+!docs/*.png
 *.jpg
 *.jpeg
 data/

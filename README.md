@@ -2,6 +2,8 @@
 
 Self-hosted air quality dashboard for [AirGradient](https://www.airgradient.com/) sensors. Reads directly from your local sensor's API, stores historical data in MySQL, and serves a real-time dashboard.
 
+![Dashboard Screenshot](docs/screenshot.png)
+
 ## Features
 
 - Real-time polling from AirGradient sensor local API (every 60s)
