@@ -105,6 +105,9 @@
     <div class="measures-list" id="outdoorMeasures">
       <p style="opacity:0.5; font-size:var(--font-size-small);">Select a location to view outdoor air quality</p>
     </div>
+    <div class="charts-container">
+      <canvas id="outdoorChart"></canvas>
+    </div>
   </div>
 
   <script>
@@ -749,9 +752,14 @@
       const w = d.current.weather;
       const info = 'rgba(27, 117, 188, 0.75)';
 
+      outdoorCity = d.city;
+      outdoorState = d.state || '';
+      outdoorCountry = d.country || '';
       document.getElementById('outdoorLocationName').textContent = `${d.city}, ${d.state}`;
       document.getElementById('outdoorWidget').style.display = '';
       document.getElementById('outdoorLocationMenu').classList.remove('open');
+      if (!outdoorChart) initOutdoorChart();
+      loadOutdoorHistory();
 
       const pm25est = p.mainus === 'p2' ? aqiToPM25(p.aqius) : null;
       const pm25val = pm25est != null ? pm25est.toFixed(1) : '--';
@@ -801,21 +809,120 @@
       } catch (e) { console.error('Outdoor city failed:', e); }
     }
 
+    let outdoorCity = '', outdoorState = '', outdoorCountry = '';
+    let outdoorChart = null;
+    let outdoorHistory = [];
+
     async function initOutdoor() {
+      try {
+        const cfgResp = await fetch(`${LOCAL_API}/outdoor/config`);
+        const cfg = await cfgResp.json();
+        if (cfg.configured) {
+          outdoorCity = cfg.city;
+          outdoorState = cfg.state;
+          outdoorCountry = cfg.country;
+          document.getElementById('outdoorLocationBtn').onclick = null;
+          document.getElementById('outdoorLocationBtn').style.cursor = 'default';
+          document.getElementById('outdoorLocationName').textContent = `${cfg.city}, ${cfg.state}`;
+          document.getElementById('outdoorWidget').style.display = '';
+          initOutdoorChart();
+          await loadOutdoorHistory();
+          fetchOutdoorCity(cfg.city, cfg.state, cfg.country);
+          startOutdoorPoll();
+          return;
+        }
+      } catch(e) {}
       const mode = localStorage.getItem('outdoor_mode');
       if (mode === 'gps') {
         const lat = localStorage.getItem('outdoor_lat');
         const lon = localStorage.getItem('outdoor_lon');
-        if (lat && lon) { fetchOutdoorGPS(lat, lon); startOutdoorPoll(); }
+        if (lat && lon) {
+          document.getElementById('outdoorWidget').style.display = '';
+          initOutdoorChart();
+          fetchOutdoorGPS(lat, lon);
+          startOutdoorPoll();
+        }
       } else if (mode === 'city') {
-        const city = localStorage.getItem('outdoor_city');
-        const state = localStorage.getItem('outdoor_state');
-        const country = localStorage.getItem('outdoor_country');
-        if (city) {
-          fetchOutdoorCity(city, state, country);
+        outdoorCity = localStorage.getItem('outdoor_city') || '';
+        outdoorState = localStorage.getItem('outdoor_state') || '';
+        outdoorCountry = localStorage.getItem('outdoor_country') || '';
+        if (outdoorCity) {
+          document.getElementById('outdoorWidget').style.display = '';
+          initOutdoorChart();
+          await loadOutdoorHistory();
+          fetchOutdoorCity(outdoorCity, outdoorState, outdoorCountry);
           startOutdoorPoll();
         }
       }
+    }
+
+    function initOutdoorChart() {
+      const ctx = document.getElementById('outdoorChart');
+      if (!ctx || outdoorChart) return;
+      outdoorChart = new Chart(ctx.getContext('2d'), {
+        type: 'bar',
+        data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderWidth: 0, barPercentage: 0.9, categoryPercentage: 0.9 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              titleFont: { family: cssVar('--font-primary') || 'sans-serif', size: 13 },
+              bodyFont: { family: cssVar('--font-primary') || 'sans-serif', size: 12 },
+              callbacks: {
+                title: (items) => {
+                  if (!items.length) return '';
+                  const entry = outdoorHistory[items[0].dataIndex];
+                  return entry ? formatTooltipDate(new Date(entry.recorded_at_utc)) : '';
+                },
+                label: (item) => ` PM2.5 (est.): ${item.raw} µg/m³`
+              }
+            },
+            annotation: { annotations: {} }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: cssVar('--chart-tick-color') || '#fff', font: { family: cssVar('--font-primary') || 'sans-serif', size: 11 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+            y: { beginAtZero: true, suggestedMax: 25, grid: { color: cssVar('--chart-grid-color') || 'rgba(255,255,255,0.1)', drawBorder: false }, ticks: { color: cssVar('--chart-tick-color') || '#fff', font: { family: cssVar('--font-primary') || 'sans-serif', size: 11 }, padding: 4 } }
+          }
+        }
+      });
+    }
+
+    async function loadOutdoorHistory() {
+      if (!outdoorCity || !outdoorCountry) return;
+      try {
+        const resp = await fetch(`${LOCAL_API}/outdoor/history?city=${encodeURIComponent(outdoorCity)}&country=${encodeURIComponent(outdoorCountry)}&hours=168`);
+        const rows = await resp.json();
+        if (Array.isArray(rows)) {
+          outdoorHistory = rows;
+          updateOutdoorChart();
+        }
+      } catch(e) { console.error('Outdoor history failed:', e); }
+    }
+
+    function updateOutdoorChart() {
+      if (!outdoorChart || !outdoorHistory.length) return;
+      const labels = outdoorHistory.map(r => formatLabel(new Date(r.recorded_at_utc)));
+      const values = outdoorHistory.map(r => r.pm25_estimated);
+      const colors = values.map(v => v != null ? getPM25Color(v) : 'transparent');
+
+      outdoorChart.data.labels = labels;
+      outdoorChart.data.datasets[0].data = values;
+      outdoorChart.data.datasets[0].backgroundColor = colors;
+
+      const valid = values.filter(v => v != null);
+      const avg = valid.length ? (valid.reduce((a,b) => a+b, 0) / valid.length).toFixed(1) : '0';
+
+      outdoorChart.options.plugins.annotation.annotations = {
+        whoLine: { type: 'line', yMin: 15, yMax: 15, borderColor: 'rgba(255,255,255,0.4)', borderWidth: 1,
+          label: { display: true, content: 'WHO 24h Guideline', position: 'start', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
+        },
+        avgLine: { type: 'line', yMin: parseFloat(avg), yMax: parseFloat(avg), borderColor: 'rgba(29,226,8,0.6)', borderWidth: 1, borderDash: [4,4],
+          label: { display: true, content: `Average: ${avg} µg/m³`, position: 'center', backgroundColor: 'rgba(29,226,8,0.85)', color: '#fff', font: { size: 11, family: cssVar('--font-primary'), weight: 'bold' }, padding: { top: 3, bottom: 3, left: 6, right: 6 } }
+        }
+      };
+      outdoorChart.update('none');
     }
 
     (async function init() {

@@ -33,6 +33,9 @@ services:
       - LOCATION_ID=${LOCATION_ID:-0}
       - COLLECT_INTERVAL=60
       - IQAIR_API_KEY=${IQAIR_API_KEY:-}
+      - OUTDOOR_CITY=${OUTDOOR_CITY:-}
+      - OUTDOOR_STATE=${OUTDOOR_STATE:-}
+      - OUTDOOR_COUNTRY=${OUTDOOR_COUNTRY:-}
     volumes:
       - "//c/users/user/downloads/as/data/airgradient/data:/data"
     depends_on:

@@ -16,6 +16,9 @@ IQAIR_API_KEY = os.environ.get('IQAIR_API_KEY', '')
 IQAIR_CACHE = {'data': None, 'ts': 0}
 IQAIR_CACHE_SECONDS = 300
 LOCATION_ID = int(os.environ.get('LOCATION_ID', '0'))
+OUTDOOR_CITY = os.environ.get('OUTDOOR_CITY', '')
+OUTDOOR_STATE = os.environ.get('OUTDOOR_STATE', '')
+OUTDOOR_COUNTRY = os.environ.get('OUTDOOR_COUNTRY', '')
 
 sensor_registry = {}
 
@@ -272,6 +275,8 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(302)
             self.send_header('Location', 'https://api.airgradient.com/public/docs/api/v1/swagger.json')
             self.end_headers()
+        elif self.path.startswith('/api/outdoor/config'):
+            self._outdoor_config()
         elif self.path.startswith('/api/outdoor/history'):
             self._outdoor_history_request()
         elif self.path.startswith('/api/outdoor'):
@@ -372,6 +377,19 @@ class ProxyHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
             self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def _outdoor_config(self):
+        config = {
+            'configured': bool(OUTDOOR_CITY and OUTDOOR_COUNTRY),
+            'city': OUTDOOR_CITY,
+            'state': OUTDOOR_STATE,
+            'country': OUTDOOR_COUNTRY
+        }
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(config).encode())
 
     def _outdoor_history_request(self):
         params = {}
@@ -595,6 +613,9 @@ if __name__ == '__main__':
             print(f"Collector started for {sid} @ {host} (every {COLLECT_INTERVAL}s)", flush=True)
 
     if db_available and IQAIR_API_KEY:
+        if OUTDOOR_CITY and OUTDOOR_COUNTRY:
+            outdoor_collector_cities.append((OUTDOOR_CITY, OUTDOOR_STATE, OUTDOOR_COUNTRY))
+            print(f"Outdoor location configured: {OUTDOOR_CITY}, {OUTDOOR_STATE}, {OUTDOOR_COUNTRY}", flush=True)
         t_outdoor = threading.Thread(target=outdoor_collector_loop, daemon=True)
         t_outdoor.start()
         print(f"Outdoor collector started (every {IQAIR_CACHE_SECONDS}s)", flush=True)
