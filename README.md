@@ -46,7 +46,7 @@ docker compose restart airgradient-dashboard
 
 Duplicate rows are safely skipped (keyed on sensor ID + timestamp).
 
-> **Note: Single sensor support.** The live collector polls one sensor at a time (the `AIRGRADIENT_HOST` IP). If your CSV export contains data from multiple sensors, all of it will be imported and viewable via the monitor dropdown — but only the sensor matching `AIRGRADIENT_HOST` receives live updates. Historical data for other sensors will be static until multi-sensor polling is implemented. The metric cards always reflect the live sensor regardless of dropdown selection.
+> **Note: Single sensor live polling.** The collector polls one device at a time (the `AIRGRADIENT_HOST` IP) and stores readings using the device's serial number as the sensor ID. If your CSV export contains data from multiple sensors, all of it will be imported and each sensor will appear in the monitor dropdown with full historical charts. However, only the device at `AIRGRADIENT_HOST` receives continuous live updates — data for other sensors in the database will remain static. Multi-device polling is not yet implemented.
 
 ## Configuration
 
