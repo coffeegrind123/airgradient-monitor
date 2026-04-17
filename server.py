@@ -75,6 +75,37 @@ def get_db():
         print(f"DB connection failed: {e}")
         return None
 
+def ensure_schema():
+    for attempt in range(10):
+        conn = get_db()
+        if conn:
+            break
+        print(f"Waiting for database (attempt {attempt + 1}/10)...", flush=True)
+        time.sleep(3)
+    if not conn:
+        print("Could not connect to database for schema init", flush=True)
+        return
+    try:
+        cursor = conn.cursor()
+        schema_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'schema.sql')
+        if os.path.exists(schema_path):
+            with open(schema_path, 'r') as f:
+                statements = f.read().split(';')
+            for stmt in statements:
+                stmt = stmt.strip()
+                if stmt:
+                    try:
+                        cursor.execute(stmt)
+                    except Exception:
+                        pass
+            conn.commit()
+            print("Schema ensured via application startup", flush=True)
+        cursor.close()
+    except Exception as e:
+        print(f"Schema init error: {e}", flush=True)
+    finally:
+        conn.close()
+
 def store_reading(data, sensor_id=None):
     if not sensor_id:
         serial = data.get('serialno', '')
@@ -735,6 +766,7 @@ if __name__ == '__main__':
     print(f"Registered {len(sensor_registry)} sensor(s): {dict(sensor_registry)}", flush=True)
 
     if db_available:
+        ensure_schema()
         import glob
         csv_dir = os.environ.get('CSV_DIR', '/data')
         csv_files = sorted(glob.glob(os.path.join(csv_dir, '*.csv')))
